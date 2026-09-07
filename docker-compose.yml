@@ -1,0 +1,49 @@
+# Two long-running services share one SQLite file: the worker writes, the web
+# server reads. SQLite in WAL mode handles that correctly, which is why this
+# needs no database server.
+
+services:
+  web:
+    build: .
+    command: npm start
+    ports:
+      - "${PORT:-3000}:3000"
+    volumes:
+      # Config is mounted rather than baked in, so editing sources.yaml or
+      # taxonomy.yaml does not mean rebuilding an image.
+      - ./config:/app/config
+      - ./data:/app/data
+    environment:
+      TZ: ${TZ:-UTC}
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  worker:
+    build: .
+    command: npm run worker
+    volumes:
+      - ./config:/app/config
+      - ./data:/app/data
+    environment:
+      TZ: ${TZ:-UTC}
+      # Raise if you add many sources; each is still rate-limited per host.
+      INGEST_CONCURRENCY: ${INGEST_CONCURRENCY:-4}
+    restart: unless-stopped
+    depends_on:
+      - web
+
+  # Run on demand, not continuously:
+  #   docker compose --profile hunter run --rm hunter https://www.pimco.com/eu/en/insights
+  hunter:
+    build:
+      context: .
+      dockerfile: Dockerfile.hunter
+    profiles: ["hunter"]
+    volumes:
+      - ./config:/app/config
+      - ./data:/app/data

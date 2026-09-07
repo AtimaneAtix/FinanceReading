@@ -1,0 +1,178 @@
+# Source registry. This file is the heart of the project — adding an
+# institution is a block here, never a code change.
+#
+# CONFIDENCE WARNING. The session that wrote this file could not reach any of
+# these domains (the sandbox egress proxy refused every one), so no URL below
+# has been confirmed live. Treat this as a starting grid, not a finished list:
+#
+#   npm run doctor                  # tests every source, prints what works
+#   npm run discover -- <page-url>  # hunts the real endpoint behind a JS page
+#
+# Adapters, best first: json > rss > sitemap > html > browser.
+# See README.md for the field reference.
+
+defaults:
+  poll_minutes: 30
+
+sources:
+  # ---------------------------------------------------------------------------
+  # Tier 1 — public institutions. Conventional RSS, stable, made to be consumed.
+  # ---------------------------------------------------------------------------
+
+  - id: fed-press
+    institution: Federal Reserve
+    name: Press releases
+    homepage: https://www.federalreserve.gov
+    static_tags: [type:news, scope:macro, region:us, theme:monetary-policy]
+    adapter:
+      kind: rss
+      url: https://www.federalreserve.gov/feeds/press_all.xml
+
+  - id: fed-notes
+    institution: Federal Reserve
+    name: FEDS Notes
+    homepage: https://www.federalreserve.gov
+    static_tags: [type:research, scope:macro, region:us]
+    adapter:
+      kind: rss
+      url: https://www.federalreserve.gov/feeds/feds_notes.xml
+
+  - id: ecb-press
+    institution: ECB
+    name: Press releases
+    homepage: https://www.ecb.europa.eu
+    static_tags: [type:news, scope:macro, region:europe, theme:monetary-policy]
+    adapter:
+      kind: rss
+      url: https://www.ecb.europa.eu/rss/press.html
+
+  - id: boe-news
+    institution: Bank of England
+    name: News and publications
+    homepage: https://www.bankofengland.co.uk
+    static_tags: [type:news, scope:macro, region:uk, theme:monetary-policy]
+    adapter:
+      kind: rss
+      url: https://www.bankofengland.co.uk/rss/news
+
+  - id: bis-publications
+    institution: BIS
+    name: Publications
+    homepage: https://www.bis.org
+    static_tags: [type:research, scope:macro, region:global]
+    adapter:
+      kind: rss
+      url: https://www.bis.org/doclist/all_rss.xml
+
+  - id: imf-blog
+    institution: IMF
+    name: Blog
+    homepage: https://www.imf.org
+    static_tags: [type:insight, scope:macro, region:global]
+    adapter:
+      kind: rss
+      url: https://www.imf.org/en/Blogs/rss
+
+  # ---------------------------------------------------------------------------
+  # Tier 2 — the asset managers and banks you actually asked for.
+  #
+  # These insight hubs are JavaScript search applications (PIMCO's is Coveo —
+  # the `@publishz32xdate` field name and the `f:category=[guid,...]` fragment
+  # give it away). A plain HTTP fetch of the listing page returns an empty
+  # shell, so the sitemap adapter below is the honest no-JavaScript fallback:
+  # it finds new article URLs and reads the title and date from each article's
+  # own OpenGraph/JSON-LD metadata.
+  #
+  # It works, but it is second best. Run `npm run discover` against each
+  # listing page to capture the real JSON endpoint, then replace the block
+  # with a `kind: json` adapter — richer data, native categories, no per-article
+  # fetches.
+  # ---------------------------------------------------------------------------
+
+  - id: pimco-insights
+    institution: PIMCO
+    name: Insights
+    homepage: https://www.pimco.com
+    static_tags: [type:insight]
+    adapter:
+      kind: sitemap
+      url: https://www.pimco.com/sitemap.xml
+      include: ['/insights/', '/blog/']
+      exclude: ['/funds/', '/literature/']
+      max_new_per_run: 25
+
+  - id: goldman-insights
+    institution: Goldman Sachs
+    name: Insights
+    homepage: https://www.goldmansachs.com
+    static_tags: [type:insight]
+    adapter:
+      kind: sitemap
+      url: https://www.goldmansachs.com/sitemap.xml
+      include: ['/insights/']
+      max_new_per_run: 25
+
+  - id: morganstanley-ideas
+    institution: Morgan Stanley
+    name: Ideas
+    homepage: https://www.morganstanley.com
+    static_tags: [type:insight]
+    adapter:
+      kind: sitemap
+      url: https://www.morganstanley.com/sitemap.xml
+      include: ['/ideas/', '/insights/']
+      max_new_per_run: 25
+
+  - id: schroders-insights
+    institution: Schroders
+    name: Insights
+    homepage: https://www.schroders.com
+    static_tags: [type:insight]
+    adapter:
+      kind: sitemap
+      url: https://www.schroders.com/sitemap.xml
+      include: ['/insights/']
+      max_new_per_run: 25
+
+  - id: blackrock-bii
+    institution: BlackRock
+    name: Investment Institute
+    homepage: https://www.blackrock.com
+    static_tags: [type:insight]
+    adapter:
+      kind: sitemap
+      url: https://www.blackrock.com/corporate/sitemap.xml
+      include: ['/insights/', '/investment-institute/']
+      max_new_per_run: 25
+
+  - id: jpmam-insights
+    institution: J.P. Morgan Asset Management
+    name: Insights
+    homepage: https://am.jpmorgan.com
+    static_tags: [type:insight]
+    adapter:
+      kind: sitemap
+      url: https://am.jpmorgan.com/sitemap.xml
+      include: ['/insights/']
+      max_new_per_run: 25
+
+  - id: morningstar-markets
+    institution: Morningstar
+    name: Markets
+    homepage: https://www.morningstar.com
+    static_tags: [type:commentary]
+    adapter:
+      kind: sitemap
+      url: https://www.morningstar.com/sitemap.xml
+      include: ['/markets/', '/economy/', '/funds/']
+      max_new_per_run: 25
+
+  - id: bofa-institute
+    institution: Bank of America
+    name: BofA Institute
+    homepage: https://institute.bankofamerica.com
+    static_tags: [type:research]
+    adapter:
+      kind: sitemap
+      url: https://institute.bankofamerica.com/sitemap.xml
+      max_new_per_run: 25

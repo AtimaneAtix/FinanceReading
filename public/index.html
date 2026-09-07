@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FinanceReading</title>
+<link rel="stylesheet" href="/styles.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📰</text></svg>">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">
+    <span class="brand-mark">FR</span>
+    <span class="brand-name">FinanceReading</span>
+  </div>
+  <div class="controls">
+    <input id="search" type="search" placeholder="Search headlines…" autocomplete="off" spellcheck="false">
+    <select id="since" aria-label="Date range">
+      <option value="24h">24 hours</option>
+      <option value="7d">7 days</option>
+      <option value="30d">30 days</option>
+      <option value="all">All time</option>
+    </select>
+    <select id="sort" aria-label="Sort order">
+      <option value="newest">Newest first</option>
+      <option value="oldest">Oldest first</option>
+    </select>
+    <button id="clear" type="button" class="ghost" hidden>Clear filters</button>
+  </div>
+  <button id="menu-toggle" type="button" class="ghost menu-toggle" aria-label="Toggle filters">Filters</button>
+</header>
+
+<div class="layout">
+  <aside id="sidebar" class="sidebar">
+    <div id="facets"></div>
+  </aside>
+
+  <main class="main">
+    <div class="results-bar">
+      <span id="count" class="count">Loading…</span>
+      <span id="active-filters" class="active-filters"></span>
+    </div>
+    <ol id="items" class="items"></ol>
+    <div id="sentinel" class="sentinel"></div>
+    <div id="empty" class="empty" hidden></div>
+  </main>
+</div>
+
+<footer id="health" class="health" hidden></footer>
+
+<script type="module" src="/app.js"></script>
+</body>
+</html>

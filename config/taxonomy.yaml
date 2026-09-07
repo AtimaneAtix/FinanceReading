@@ -1,0 +1,141 @@
+# Tag taxonomy for the reading panel.
+#
+# Tags are "facet:value". Filters OR within a facet and AND across facets, so
+# `asset:credit + asset:equities + scope:macro` means
+# "(credit OR equities) AND macro".
+#
+# Two things assign tags, in this order:
+#   1. native_map — the publisher's own category, mapped straight through.
+#      This is the highest-quality signal available; prefer it over keywords.
+#   2. rules      — case-insensitive regex over the title and summary.
+#
+# After editing this file run `npm run retag` to re-apply it to everything
+# already stored. Editing is cheap and reversible; that is the point.
+
+facets:
+  - id: type
+    label: Type
+    values: [news, insight, outlook, forecast, commentary, research, podcast]
+
+  - id: scope
+    label: Scope
+    values: [macro, micro]
+
+  - id: asset
+    label: Asset class
+    values:
+      [equities, fixed-income, credit, rates, fx, commodities, real-estate,
+       crypto, multi-asset, private-markets]
+
+  - id: region
+    label: Region
+    values: [us, europe, uk, japan, china, em, global]
+
+  - id: theme
+    label: Theme
+    values:
+      [monetary-policy, inflation, growth, recession, geopolitics, ai, energy,
+       elections, banking, housing, labour, trade, esg, valuations]
+
+# Publisher category -> our tags. Fill this in from `npm run discover` output;
+# keys may be a human label or an opaque GUID, whichever the source emits.
+native_map: {}
+
+rules:
+  # --- type ---------------------------------------------------------------
+  - tag: type:outlook
+    any: ['\boutlook\b', 'year ahead', '\bmid[- ]?year\b', '\bQ[1-4] 20\d\d\b', 'what to expect']
+  - tag: type:forecast
+    any: ['\bforecast', 'projection', 'we expect', 'base case', 'scenario']
+  - tag: type:commentary
+    any: ['\bcommentary\b', 'market update', 'weekly review', 'this week in', 'quick take']
+  - tag: type:research
+    any: ['\bresearch\b', 'white ?paper', 'working paper', 'study finds', 'methodology']
+  - tag: type:podcast
+    any: ['\bpodcast\b', '\bepisode\b', '\blisten\b']
+  - tag: type:insight
+    any: ['\binsight', 'perspective', 'viewpoint', 'point of view', '\bthought']
+
+  # --- scope --------------------------------------------------------------
+  - tag: scope:macro
+    any:
+      ['\bgdp\b', 'inflation', 'central bank', '\bfomc\b', '\becb\b', '\bfed\b',
+       'interest rate', 'monetary polic', 'fiscal', 'unemployment', 'labou?r market',
+       'recession', 'macro', 'economic outlook', 'yield curve', 'sovereign']
+  - tag: scope:micro
+    any:
+      ['\bearnings\b', 'balance sheet', 'free cash flow', 'profit margin',
+       '\bipo\b', 'merger', 'acquisition', 'company', 'issuer', 'stock pick',
+       'single[- ]name', 'downgrade', 'upgrade']
+
+  # --- asset class --------------------------------------------------------
+  - tag: asset:fixed-income
+    any:
+      ['\bbond', 'fixed income', '\bdebt\b', '\bduration\b', 'treasur', '\bgilt',
+       '\bbund', '\bjgb\b', 'yield curve', 'coupon', 'maturit', 'sovereign']
+  - tag: asset:credit
+    any:
+      ['\bcredit\b', 'high yield', 'investment grade', '\bspread', 'default rate',
+       '\bloan', 'securitiz', 'securitis', '\bcds\b', 'leveraged finance']
+  - tag: asset:rates
+    any: ['\brates\b', 'rate cut', 'rate hike', 'policy rate', 'term premium', 'duration risk']
+  - tag: asset:equities
+    any: ['\bequit', '\bstock', '\bshares\b', '\bs&p\b', 'nasdaq', 'earnings season', 'small[- ]cap']
+  - tag: asset:fx
+    any: ['\bcurrenc', 'foreign exchange', '\bfx\b', '\bdollar\b', '\beuro\b', '\byen\b', 'renminbi']
+  - tag: asset:commodities
+    any: ['commodit', '\boil\b', 'crude', 'natural gas', '\bgold\b', '\bcopper\b', 'metals']
+  - tag: asset:real-estate
+    any: ['real estate', '\breit', 'property market', 'commercial property', 'housing market']
+  - tag: asset:crypto
+    any: ['crypto', 'bitcoin', 'ethereum', 'digital asset', 'stablecoin', 'tokeni[sz]']
+  - tag: asset:multi-asset
+    any: ['multi[- ]asset', 'asset allocation', 'balanced portfolio', '60/40', 'diversification']
+  - tag: asset:private-markets
+    any: ['private market', 'private equity', 'private credit', 'venture capital', 'infrastructure fund']
+
+  # --- region -------------------------------------------------------------
+  - tag: region:us
+    any: ['\bu\.?s\.?\b', 'united states', 'america', '\bfed\b', '\bfomc\b', 'treasur']
+  - tag: region:europe
+    any: ['\beurope', 'euro ?zone', 'euro area', '\becb\b', '\bgermany\b', '\bfrance\b', '\bitaly\b']
+  - tag: region:uk
+    any: ['\buk\b', 'united kingdom', 'britain', 'bank of england', '\bgilt', 'sterling']
+  - tag: region:japan
+    any: ['\bjapan', '\bboj\b', '\byen\b', '\bjgb\b']
+  - tag: region:china
+    any: ['\bchina\b', 'chinese', '\bpboc\b', 'renminbi', 'hong kong']
+  - tag: region:em
+    any: ['emerging market', '\bem\b debt', 'frontier market', '\bindia\b', '\bbrazil\b', '\bmexico\b']
+  - tag: region:global
+    any: ['\bglobal\b', 'worldwide', 'cross[- ]border', 'international']
+
+  # --- theme --------------------------------------------------------------
+  - tag: theme:monetary-policy
+    any: ['monetary polic', 'rate cut', 'rate hike', 'quantitative (easing|tightening)', '\bfomc\b', 'central bank']
+  - tag: theme:inflation
+    any: ['inflation', '\bcpi\b', '\bpce\b', 'price pressure', 'disinflation', 'deflation']
+  - tag: theme:growth
+    any: ['\bgrowth\b', '\bgdp\b', 'expansion', 'soft landing']
+  - tag: theme:recession
+    any: ['recession', 'hard landing', 'downturn', 'contraction']
+  - tag: theme:geopolitics
+    any: ['geopolit', '\bwar\b', 'conflict', 'sanction', 'tariff', 'trade tension']
+  - tag: theme:ai
+    any: ['\bai\b', 'artificial intelligence', 'machine learning', 'data cent', 'semiconductor']
+  - tag: theme:energy
+    any: ['\benergy\b', '\boil\b', 'natural gas', 'renewable', 'transition', 'power demand']
+  - tag: theme:elections
+    any: ['election', '\bvote\b', 'ballot', 'referendum', 'fiscal polic']
+  - tag: theme:banking
+    any: ['\bbank', 'lending standard', 'deposit', 'basel', 'capital requirement']
+  - tag: theme:housing
+    any: ['housing', 'mortgage', 'home price', 'residential']
+  - tag: theme:labour
+    any: ['labou?r market', 'employment', 'unemploy', 'payroll', 'wage', 'jobs report']
+  - tag: theme:trade
+    any: ['\btrade\b', 'tariff', 'export', 'import', 'supply chain']
+  - tag: theme:esg
+    any: ['\besg\b', 'sustainab', 'climate', 'net zero', 'decarbon']
+  - tag: theme:valuations
+    any: ['valuation', 'price[/ ]earnings', '\bp/e\b', 'expensive', 'overvalued', 'cheap']
