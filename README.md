@@ -45,6 +45,14 @@ keeps working when the site is redesigned.
 
 `npm run discover` does that hunting for you.
 
+> **That PIMCO URL is history, and it makes the point.** As of September 2026
+> the page makes no article request at all — the hunter watches it render and
+> captures nothing but cookie-consent traffic. The Coveo app was replaced.
+> Which is exactly why the answer is a hunting command rather than a list of
+> endpoints: any endpoint written into this README is a dead link waiting to
+> happen. `goldman-insights` in `config/sources.yaml` is the worked example of
+> a hunt that paid off.
+
 ---
 
 ## Getting started
@@ -130,6 +138,35 @@ than to silence.
     kind: rss
     url: https://www.federalreserve.gov/feeds/press_all.xml
 
+# A real content API, found by `npm run discover`. No token, no pagination:
+# it returns the whole corpus, so the cap ranks by date before it cuts.
+- id: goldman-insights
+  institution: Goldman Sachs
+  name: Insights
+  homepage: https://www.goldmansachs.com
+  static_tags: [type:insight]
+  adapter:
+    kind: json
+    request:
+      method: GET
+      url: https://www.goldmansachs.com/feeds/insights.json
+    items_path: ''            # empty: the records are the top-level array
+    fields:                   # dot paths within one record
+      title: title
+      url: slug               # a path, not a URL — resolved against `homepage`
+      summary: description
+      published_at: cmsPageProps.publishDate
+      categories:             # one path, or several
+        - cmsPageProps.pageType
+        - cmsPageProps.contentType[].title
+        - cmsPageProps.series[].title
+        - cmsPageProps.primaryTopic[].title
+    max_new_per_run: 25
+  fallback:
+    - kind: sitemap
+      url: https://www.goldmansachs.com/sitemap.xml
+      include: ['/insights/']
+
 # A search API behind a JavaScript page, with a token minted by that page.
 - id: example-insights
   institution: Example Asset Management
@@ -147,22 +184,23 @@ than to silence.
       kind: from_page                       # or `env` with a var name, or `none`
       page_url: https://www.example.com/insights
       token_regex: '"accessToken"\s*:\s*"([^"]+)"'
-    items_path: results                     # dot path to the array
-    fields:                                 # dot paths within one record
+    items_path: results
+    fields:
       title: title
       url: clickUri
       summary: excerpt
       published_at: raw.publishdate
       categories: raw.category
     pagination: { kind: offset, page_size: 50, max_pages: 2 }
-  fallback:
-    - kind: sitemap
-      url: https://www.example.com/sitemap.xml
-      include: ['/insights/']
 ```
 
 Templates `{{token}}`, `{{offset}}`, `{{page}}` and `{{page_size}}` are
 substituted into the URL, headers and body.
+
+**Field paths.** `a.b`, `a.b[0].c`, and `a.b[].c` — the last fans the rest of
+the path out over an array, which is how a CMS usually hands over its taxonomy:
+as objects, not as bare strings. `categories` takes a list of paths as well as
+a single one, because a CMS rarely keeps its whole taxonomy in one place.
 
 ---
 
@@ -235,6 +273,19 @@ server reads. That is why there is no database server to run.
 - *Near*: a normalised title from the same institution within seven days. This
   is what collapses the `/us/en/` and `/eu/en/` copies of one article.
 
+**A date the publisher did not state is not a date.** A sitemap's `lastmod` is
+a rebuild timestamp — publishers re-stamp whole sections at once — so an
+article dated only by `lastmod` is marked estimated, and the panel sorts every
+genuinely dated article above the estimated ones rather than letting a
+decade-old page pose as this morning's news. Such a source is also rationed:
+`max_undated_per_run` (default 5) stops the run once it has taken that many
+undated articles. Entries are visited newest-first and every URL visited is
+recorded, so the next run resumes past that point — an undated source arrives
+as a trickle of its most recent work instead of one dump, and the crawl costs
+five requests rather than twenty-five. A source with real dates is untouched
+by this, which is the strongest practical argument for hunting a `json`
+endpoint.
+
 **Zero items is treated as broken, not quiet.** A scraper that silently stops
 returning anything is the most common failure in a system like this, so a
 source that returns nothing unexpectedly is marked `EMPTY` and named in the
@@ -277,8 +328,14 @@ unchanged feed costs nothing.
 
 ## Known limits
 
-- The seed source list in `config/sources.yaml` is **unverified**. Run
-  `doctor` first.
+- The source list in `config/sources.yaml` has been run against the live sites,
+  but that is a snapshot, not a guarantee — `bofa-institute` broke upstream the
+  same week, and `imf-blog` is disabled behind Akamai. Run `doctor` before
+  trusting any of it, and read the comments: each dead or awkward source says
+  what was tried.
+- Only one source (`goldman-insights`) runs on a content API. The rest are
+  feeds and sitemaps, so roughly two in five stored articles carry an estimated
+  date. Each successful `discover` hunt moves a source out of that group.
 - Full article text, AI summaries, PDF outlooks, read/unread state and saved
   articles are not in this version. The schema takes them without a rewrite.
 - Sites behind a login or a hard paywall are out of scope.
