@@ -1,5 +1,12 @@
 import { AdapterConfig } from '../config.ts';
-import { canonicalizeUrl, canonicalHash, titleKey, displayTitle, parseDate } from './canonical.ts';
+import {
+  canonicalizeUrl,
+  absoluteUrl,
+  canonicalHash,
+  titleKey,
+  displayTitle,
+  parseDate,
+} from './canonical.ts';
 import { Tagger } from './tagger.ts';
 import { runAdapter, AdapterError, type AdapterResult, type RawItem } from './adapters/index.ts';
 import { insertItems, recordFetch, type DB, type SourceRow, type InsertStats } from '../db/index.ts';
@@ -68,8 +75,9 @@ export function normaliseItems(
       sourceId: source.id,
       institution: source.institution,
       // The stored URL keeps whatever the publisher gave us, so the link works;
-      // only the deduplication key is canonicalised.
-      url: item.url.trim(),
+      // only the deduplication key is canonicalised. Resolving is still
+      // needed: a content API may hand over a path rather than a URL.
+      url: absoluteUrl(item.url, source.homepage),
       canonicalHash: canonicalHash(canonical),
       title,
       titleKey: titleKey(title),

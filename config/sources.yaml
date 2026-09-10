@@ -113,16 +113,47 @@ sources:
       exclude: ['/funds/', '/literature/']
       max_new_per_run: 25
 
+  # The one source here that publishes its own content API. Found by running
+  # `npm run discover` against https://www.goldmansachs.com/insights and
+  # reading the network capture: the page fetches this feed itself, no token
+  # and no pagination, and it is the whole insights corpus -- 2100 articles
+  # with real publication dates and the CMS taxonomy attached. Everything the
+  # sitemap adapter has to infer is stated here outright, which is why a json
+  # adapter is always worth the hunt.
   - id: goldman-insights
     institution: Goldman Sachs
     name: Insights
     homepage: https://www.goldmansachs.com
     static_tags: [type:insight]
     adapter:
-      kind: sitemap
-      url: https://www.goldmansachs.com/sitemap.xml
-      include: ['/insights/']
+      kind: json
+      request:
+        method: GET
+        url: https://www.goldmansachs.com/feeds/insights.json
+      items_path: ''            # the records are the top-level array
+      fields:
+        title: title
+        url: slug               # relative; resolved against `homepage`
+        summary: description
+        published_at: cmsPageProps.publishDate
+        # The taxonomy is split four ways, and each part earns its keep:
+        # pageType separates podcasts and videos from articles, series names
+        # "Exchanges" and "Top of Mind", and the topics carry the subject.
+        categories:
+          - cmsPageProps.pageType
+          - cmsPageProps.contentType[].title
+          - cmsPageProps.series[].title
+          - cmsPageProps.primaryTopic[].title
+          - cmsPageProps.secondaryTopic[].title
+      # Newest 25 of the 2100. The handful of section landing pages mixed in
+      # carry no publishDate, so they sort last and never reach the cut.
       max_new_per_run: 25
+    fallback:
+      # If the feed moves, fall back to what this source used before it.
+      - kind: sitemap
+        url: https://www.goldmansachs.com/sitemap.xml
+        include: ['/insights/']
+        max_new_per_run: 25
 
   - id: morganstanley-ideas
     institution: Morgan Stanley
@@ -193,6 +224,15 @@ sources:
       include: ['/markets/', '/economy/', '/funds/', '/personal-finance/']
       max_new_per_run: 25
 
+  # Broken upstream since 2026-09-10, and left enabled deliberately so the
+  # health strip keeps saying so -- a failing source backs off exponentially,
+  # so the cost of watching it is close to nothing.
+  #
+  # /sitemap.xml is an index with exactly one child,
+  # .../bank-of-america-institute.sitemap.xml, and that child now answers 400.
+  # robots.txt advertises the same dead URL, and the site publishes no feed, so
+  # there is nothing to point at until they fix it. If it stays down:
+  #   npm run discover -- https://institute.bankofamerica.com/economic-insights.html
   - id: bofa-institute
     institution: Bank of America
     name: BofA Institute

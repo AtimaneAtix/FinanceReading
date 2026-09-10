@@ -11,6 +11,24 @@ const TRACKING_PARAMS = new Set([
 ]);
 
 /**
+ * Makes a URL absolute without canonicalising it.
+ *
+ * This is what gets stored and linked, so it keeps the publisher's own form --
+ * their `www.`, their query string, their casing. Only the deduplication key
+ * is normalised. But a content API often gives a path rather than a URL
+ * (Goldman's feed hands over "/insights/articles/..."), and storing that
+ * verbatim would point every headline back at the panel itself.
+ */
+export function absoluteUrl(input: string, base?: string): string {
+  const raw = input.trim();
+  try {
+    return new URL(raw, base).toString();
+  } catch {
+    return raw;
+  }
+}
+
+/**
  * Reduces a URL to a stable identity for deduplication.
  *
  * The fragment is always dropped, which matters more here than it looks: the

@@ -1,5 +1,13 @@
 import { describe, it, expect } from 'vitest';
-import { canonicalizeUrl, canonicalHash, titleKey, displayTitle, parseDate, toExcerpt } from '../src/ingest/canonical.ts';
+import {
+  canonicalizeUrl,
+  absoluteUrl,
+  canonicalHash,
+  titleKey,
+  displayTitle,
+  parseDate,
+  toExcerpt,
+} from '../src/ingest/canonical.ts';
 import { getPath, render } from '../src/ingest/adapters/json.ts';
 import { extractArticleMeta } from '../src/ingest/meta.ts';
 import { parseRobots, pathMatches, describeFetchFailure } from '../src/ingest/http.ts';
@@ -45,6 +53,24 @@ describe('canonicalizeUrl', () => {
   it('resolves relative links against the source homepage', () => {
     expect(canonicalizeUrl('/insights/piece', 'https://a.test/section/')).toBe(
       'https://a.test/insights/piece',
+    );
+  });
+});
+
+describe('absoluteUrl', () => {
+  it('resolves a bare path against the source homepage', () => {
+    // Goldman's content API hands over a slug, not a URL. Storing that
+    // verbatim would point every headline back at the panel itself.
+    expect(absoluteUrl('/insights/articles/gold', 'https://www.goldmansachs.com')).toBe(
+      'https://www.goldmansachs.com/insights/articles/gold',
+    );
+  });
+
+  it('leaves an absolute URL in the publisher\'s own form', () => {
+    // Unlike the deduplication key, this keeps the www. and the query string:
+    // it is what the reader clicks.
+    expect(absoluteUrl('https://www.pimco.com/us/en/insights/x?a=1', 'https://www.pimco.com')).toBe(
+      'https://www.pimco.com/us/en/insights/x?a=1',
     );
   });
 });
@@ -165,6 +191,26 @@ describe('json field paths', () => {
 
   it('returns undefined instead of throwing on a wrong path', () => {
     expect(getPath(payload, 'data.missing.deep')).toBeUndefined();
+  });
+
+  it('fans a "[]" segment out over an array, which is how a CMS gives its taxonomy', () => {
+    const record = {
+      cmsPageProps: {
+        primaryTopic: [{ title: 'Markets' }, { title: 'Energy' }],
+        series: [{ title: 'Exchanges' }],
+      },
+    };
+    expect(getPath(record, 'cmsPageProps.primaryTopic[].title')).toEqual(['Markets', 'Energy']);
+    expect(getPath(record, 'cmsPageProps.series[].title')).toEqual(['Exchanges']);
+  });
+
+  it('skips array entries that lack the field rather than emitting holes', () => {
+    const record = { topics: [{ title: 'Rates' }, { id: 'no-title-here' }] };
+    expect(getPath(record, 'topics[].title')).toEqual(['Rates']);
+  });
+
+  it('gives undefined when the fanned-out path is not an array', () => {
+    expect(getPath({ topics: 'Rates' }, 'topics[].title')).toBeUndefined();
   });
 
   it('substitutes template variables', () => {

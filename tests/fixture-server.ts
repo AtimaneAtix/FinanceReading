@@ -166,8 +166,40 @@ function searchJson(offset: number, pageSize: number): string {
   });
 }
 
+/**
+ * The whole corpus in one response, oldest first and with a relative path
+ * instead of a URL -- the shape Goldman's insights feed actually has, and the
+ * one that catches a cap that slices before it ranks.
+ */
+function corpusJson(): string {
+  return JSON.stringify(
+    [...ARTICLES].reverse().map((a) => ({
+      title: a.title,
+      slug: `/articles/${a.slug}`,
+      props: { publishDate: a.date, topics: a.categories.map((title) => ({ title })) },
+    })),
+  );
+}
+
 /** The CMS rebuild timestamp on the undated fixture page. */
 export const UNDATED_LASTMOD = '2026-09-07T13:19:18Z';
+
+/** How many undated pages the undated sitemap lists. */
+export const UNDATED_COUNT = 4;
+
+function sitemapUndatedMany(base: string): string {
+  // All four share one lastmod, as a section re-stamped in a single rebuild
+  // does, so document order is the only ordering left.
+  const entries = Array.from(
+    { length: UNDATED_COUNT },
+    (_, i) =>
+      `  <url><loc>${base}/undated/note-${i + 1}</loc><lastmod>${UNDATED_LASTMOD}</lastmod></url>`,
+  ).join('\n');
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+${entries}
+</urlset>`;
+}
 
 function sitemapIndex(base: string): string {
   return `<?xml version="1.0" encoding="UTF-8"?>
@@ -215,6 +247,10 @@ export async function startFixtureServer(): Promise<Fixture> {
     if (url.pathname === '/insights') return send(200, 'text/html', listingHtml(base));
     if (url.pathname === '/static-insights') return send(200, 'text/html', staticListingHtml(base));
     if (url.pathname === '/rss.xml') return send(200, 'application/rss+xml', rssXml(base));
+    if (url.pathname === '/feeds/corpus.json') return send(200, 'application/json', corpusJson());
+    if (url.pathname === '/sitemap-undated-many.xml') {
+      return send(200, 'application/xml', sitemapUndatedMany(base));
+    }
     if (url.pathname === '/sitemap-undated.xml') {
       // A page the CMS re-stamped today; the article behind it is years old
       // and states no date anywhere.
@@ -227,14 +263,18 @@ export async function startFixtureServer(): Promise<Fixture> {
       );
     }
 
-    if (url.pathname === '/undated/stale-note') {
+    if (url.pathname.startsWith('/undated/')) {
+      // Distinct titles, or the near-duplicate check would fold these into one
+      // and the test would be measuring deduplication rather than the cap.
+      const slug = url.pathname.split('/').pop() ?? '';
+      const title = `A Note From Years Ago (${slug})`;
       return send(
         200,
         'text/html',
-        `<!doctype html><html><head><title>A Note From Years Ago | Fixture Asset Management</title>` +
-          `<meta property="og:title" content="A Note From Years Ago">` +
+        `<!doctype html><html><head><title>${title} | Fixture Asset Management</title>` +
+          `<meta property="og:title" content="${title}">` +
           `<meta property="og:description" content="No date is published anywhere on this page.">` +
-          `</head><body><h1>A Note From Years Ago</h1></body></html>`,
+          `</head><body><h1>${title}</h1></body></html>`,
       );
     }
 

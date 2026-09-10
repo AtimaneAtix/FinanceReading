@@ -1,5 +1,5 @@
 import { httpFetch, throttled } from '../http.ts';
-import { toExcerpt } from '../canonical.ts';
+import { toExcerpt, parseDate } from '../canonical.ts';
 import { AdapterError, type AdapterContext, type AdapterResult, type RawItem } from './types.ts';
 import type { Auth } from '../../config.ts';
 
@@ -14,6 +14,17 @@ type JsonAdapterConfig = Extract<
  */
 export function getPath(value: unknown, path: string): unknown {
   if (path === '') return value;
+  // A "[]" segment fans the rest of the path out across an array:
+  // "primaryTopic[].title" collects the title of every topic. A CMS hands over
+  // its taxonomy as objects far more often than as bare strings, and without
+  // this the best tagging signal a source has is unreachable.
+  const fan = path.indexOf('[]');
+  if (fan !== -1) {
+    const array = getPath(value, path.slice(0, fan));
+    if (!Array.isArray(array)) return undefined;
+    const rest = path.slice(fan + 2).replace(/^\./, '');
+    return array.map((element) => getPath(element, rest)).filter((v) => v !== undefined);
+  }
   let current: unknown = value;
   for (const segment of path.split('.')) {
     const match = /^([^[\]]*)((?:\[\d+\])*)$/.exec(segment);
@@ -111,6 +122,9 @@ export async function fetchJson(
   const items: RawItem[] = [];
   const seen = new Set<string>();
 
+  const declared = config.fields.categories;
+  const categoryPaths = declared === undefined ? [] : [declared].flat();
+
   const pageSize = config.pagination.kind === 'offset' ? config.pagination.page_size : 0;
   const maxPages = config.pagination.kind === 'offset' ? config.pagination.max_pages : 1;
 
@@ -181,9 +195,7 @@ export async function fetchJson(
         publishedAt: config.fields.published_at
           ? getPath(record, config.fields.published_at)
           : undefined,
-        categories: config.fields.categories
-          ? asStringArray(getPath(record, config.fields.categories))
-          : [],
+        categories: categoryPaths.flatMap((path) => asStringArray(getPath(record, path))),
       });
     }
     if (usable === 0) {
@@ -196,7 +208,25 @@ export async function fetchJson(
     if (config.pagination.kind !== 'offset' || records.length < pageSize) break;
   }
 
+  // Newest first, then capped. An endpoint with no pagination hands over
+  // everything it has, and the ordering it chose is its own -- relevance, or
+  // whatever the CMS wrote last -- so the cap has to rank before it cuts or it
+  // keeps an arbitrary slice of the archive instead of the recent work.
+  if (items.length > config.max_new_per_run) {
+    const ranked = [...items]
+      .sort((a, b) => dateKey(b) - dateKey(a))
+      .slice(0, config.max_new_per_run);
+    notes.push(`kept the ${config.max_new_per_run} most recent of ${items.length} records`);
+    return { items: ranked, notes };
+  }
+
   return { items, notes };
+}
+
+/** Undated records sort last, which is where a landing page belongs. */
+function dateKey(item: RawItem): number {
+  const parsed = parseDate(item.publishedAt);
+  return parsed.estimated ? 0 : parsed.ms;
 }
 
 function hasAuthHeader(headers: Record<string, string>): boolean {

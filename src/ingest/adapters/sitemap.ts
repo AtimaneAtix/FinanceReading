@@ -149,10 +149,25 @@ export async function fetchSitemap(
 
   const items: RawItem[] = [];
   const processed: string[] = [];
+  let undated = 0;
 
   for (const [hash, entry] of fresh) {
+    // Stop once this run has taken its allowance of articles that date
+    // themselves nowhere. `fresh` is newest-lastmod-first and every URL
+    // visited below is marked seen, so the next run resumes past this point
+    // rather than re-reading the same stretch: a source that dates nothing
+    // becomes a steady trickle of its most recent work instead of one dump
+    // that lands in the panel's estimated block whole.
+    if (undated >= config.max_undated_per_run) {
+      notes.push(
+        `stopped at ${config.max_undated_per_run} article(s) with no date of their own; ` +
+          'the rest of the sitemap follows next run',
+      );
+      break;
+    }
     processed.push(hash);
     if (!config.fetch_metadata) {
+      undated++;
       // lastmod is all we have here, and it tracks CMS rebuilds, not publication.
       items.push({
         url: entry.loc,
@@ -180,6 +195,7 @@ export async function fetchSitemap(
       // surfaces in the panel as an estimate rather than as fresh news.
       const ownDate = parseDate(meta.publishedAt);
       const useLastmod = ownDate.estimated && entry.lastmod !== null;
+      if (ownDate.estimated) undated++;
       items.push({
         url: res.finalUrl || entry.loc,
         title,

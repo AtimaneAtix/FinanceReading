@@ -67,9 +67,21 @@ const JsonAdapter = z.object({
     url: z.string(),
     summary: z.string().optional(),
     published_at: z.string().optional(),
-    categories: z.string().optional(),
+    /**
+     * One path, or several. A CMS rarely keeps its whole taxonomy in one
+     * place: Goldman's feed splits it across topic, content type and series,
+     * and all three are worth mapping.
+     */
+    categories: z.union([z.string(), z.array(z.string())]).optional(),
   }),
   pagination: Pagination.default({ kind: 'none' }),
+  /**
+   * Ceiling on how many records one run may keep, newest first. An endpoint
+   * that hands over its whole corpus in a single response -- Goldman's feed is
+   * 2100 articles reaching back years -- would otherwise import all of it the
+   * first time it is polled.
+   */
+  max_new_per_run: z.number().int().positive().max(500).default(25),
 });
 
 const SitemapAdapter = z.object({
@@ -82,6 +94,17 @@ const SitemapAdapter = z.object({
   fetch_metadata: z.boolean().default(true),
   /** Ceiling on per-run article fetches, so a first run cannot hammer a site. */
   max_new_per_run: z.number().int().positive().max(200).default(25),
+  /**
+   * Ceiling on how many of those may be articles that state no date of their
+   * own, leaving the sitemap's `lastmod` -- a rebuild timestamp -- as the only
+   * thing to order them by.
+   *
+   * Such a source otherwise delivers a batch that lands in the panel's
+   * estimated block all at once, none of it known to be recent. Stopping at a
+   * few turns it into a trickle of its most recent work instead, and the run
+   * costs a handful of requests rather than the full `max_new_per_run`.
+   */
+  max_undated_per_run: z.number().int().min(1).max(200).default(5),
 });
 
 const HtmlAdapter = z.object({

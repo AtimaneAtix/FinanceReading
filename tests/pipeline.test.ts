@@ -4,6 +4,7 @@ import {
   SEARCH_TOKEN,
   ARTICLE_COUNT,
   UNDATED_LASTMOD,
+  UNDATED_COUNT,
   type Fixture,
 } from './fixture-server.ts';
 import { makeWorkspace, type TempWorkspace } from './helpers.ts';
@@ -106,6 +107,45 @@ function undatedSitemapSource(base: string) {
       url: `${base}/sitemap-undated.xml`,
       include: ['/undated/'],
       max_new_per_run: 25,
+    },
+  };
+}
+
+function corpusJsonSource(base: string, maxNew: number) {
+  return {
+    id: 'fixture-corpus',
+    institution: 'Fixture AM',
+    name: 'Corpus feed',
+    homepage: base,
+    static_tags: ['type:insight'],
+    adapter: {
+      kind: 'json',
+      request: { method: 'GET', url: `${base}/feeds/corpus.json` },
+      items_path: '',
+      fields: {
+        title: 'title',
+        url: 'slug',
+        published_at: 'props.publishDate',
+        categories: ['props.topics[].title'],
+      },
+      max_new_per_run: maxNew,
+    },
+  };
+}
+
+function manyUndatedSource(base: string, maxUndated: number) {
+  return {
+    id: 'fixture-undated-many',
+    institution: 'Fixture AM',
+    name: 'Undated sitemap',
+    homepage: base,
+    static_tags: ['type:insight'],
+    adapter: {
+      kind: 'sitemap',
+      url: `${base}/sitemap-undated-many.xml`,
+      include: ['/undated/'],
+      max_new_per_run: 25,
+      max_undated_per_run: maxUndated,
     },
   };
 }
@@ -219,6 +259,29 @@ describe('json adapter', () => {
   });
 });
 
+describe('json adapter over a whole-corpus feed', () => {
+  it('ranks by date before it caps, and resolves the relative slug', async () => {
+    // The fixture hands the records over oldest first, so a cap that slices
+    // before it ranks would keep the two oldest articles in the archive.
+    use([corpusJsonSource(fixture.base, 2)]);
+    const [outcome] = await runOnce(true);
+    expect(outcome?.status).toBe('ok');
+
+    const items = storedItems();
+    expect(items).toHaveLength(2);
+    expect(items.map((i) => i.title)).toEqual([
+      'Credit Spreads in 2026: Where the Value Is',
+      'The Inflation Path and What It Means for Rates',
+    ]);
+    // A feed that states its dates leaves nothing for the panel to estimate.
+    expect(items.every((i) => i.date_estimated === 0)).toBe(true);
+    // "/articles/credit-spreads-2026" would otherwise point at the panel.
+    expect(items[0]?.url).toBe(`${fixture.base}/articles/credit-spreads-2026`);
+    // The taxonomy arrives as objects, reached through the fanned-out path.
+    expect(JSON.parse(String(items[0]?.native_categories))).toContain('Fixed Income');
+  });
+});
+
 describe('sitemap adapter', () => {
   it('follows the index, reads each article and collapses the regional duplicate', async () => {
     use([sitemapSource(fixture.base)]);
@@ -233,6 +296,35 @@ describe('sitemap adapter', () => {
     const items = storedItems();
     expect(items.map((i) => i.title)).toContain('The Inflation Path and What It Means for Rates');
     expect(items[0]?.summary).toBeTruthy();
+  });
+
+  it('takes only its allowance of undated articles, and resumes below them next run', async () => {
+    use([manyUndatedSource(fixture.base, 2)]);
+
+    const [first] = await runOnce(true);
+    expect(first?.status).toBe('ok');
+    expect(storedItems()).toHaveLength(2);
+
+    // The cap is not a filter on the whole sitemap: the run stopped early and
+    // marked only what it visited, so the rest arrives next time.
+    const [second] = await runOnce(true);
+    expect(second?.status).toBe('ok');
+    expect(storedItems()).toHaveLength(UNDATED_COUNT);
+
+    // ...and once it is all in, the source is quiet rather than broken.
+    const [third] = await runOnce(true);
+    expect(third?.status).toBe('ok');
+    expect(storedItems()).toHaveLength(UNDATED_COUNT);
+  });
+
+  it('does not fetch the articles it stopped short of', async () => {
+    use([manyUndatedSource(fixture.base, 1)]);
+    fixture.requests.length = 0;
+    await runOnce(true);
+
+    const fetched = fixture.requests.filter((r) => r.includes('/undated/'));
+    // One article page, not all four: the allowance caps the crawl too.
+    expect(fetched).toHaveLength(1);
   });
 
   it('marks a lastmod-derived date as estimated, so stale pages cannot pose as fresh', async () => {
