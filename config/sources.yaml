@@ -1,9 +1,10 @@
 # Source registry. This file is the heart of the project — adding an
 # institution is a block here, never a code change.
 #
-# CONFIDENCE WARNING. The session that wrote this file could not reach any of
-# these domains (the sandbox egress proxy refused every one), so no URL below
-# has been confirmed live. Treat this as a starting grid, not a finished list:
+# Every URL below was fetched and parsed on 2026-09-11 with this project's own
+# user-agent, except where a comment says otherwise. That matters: several of
+# these hosts answer 406/403 to a *browser* user-agent and 200 to ours, so a
+# URL that looks dead in your browser may be perfectly alive to the worker.
 #
 #   npm run doctor                  # tests every source, prints what works
 #   npm run discover -- <page-url>  # hunts the real endpoint behind a JS page
@@ -26,9 +27,10 @@ defaults:
   take_per_run: 5
 
 sources:
-  # ---------------------------------------------------------------------------
-  # Tier 1 — public institutions. Conventional RSS, stable, made to be consumed.
-  # ---------------------------------------------------------------------------
+  # ===========================================================================
+  # 1. CENTRAL BANKS AND OFFICIAL INSTITUTIONS
+  # Conventional RSS, stable, made to be consumed.
+  # ===========================================================================
 
   - id: fed-press
     institution: Federal Reserve
@@ -96,8 +98,122 @@ sources:
       kind: rss
       url: https://www.imf.org/en/Blogs/rss
 
-  # ---------------------------------------------------------------------------
-  # Tier 2 — the asset managers and banks you actually asked for.
+  - id: boj-news
+    institution: Bank of Japan
+    name: What's new
+    homepage: https://www.boj.or.jp
+    static_tags: [type:news, scope:macro, region:japan, theme:monetary-policy]
+    adapter:
+      kind: rss
+      url: https://www.boj.or.jp/en/rss/whatsnew.xml
+
+  - id: snb-news
+    institution: Swiss National Bank
+    name: News
+    homepage: https://www.snb.ch
+    static_tags: [type:news, scope:macro, region:switzerland, theme:monetary-policy]
+    adapter:
+      kind: rss
+      url: https://www.snb.ch/public/en/rss/news
+
+  - id: boc-press
+    institution: Bank of Canada
+    name: Press releases
+    homepage: https://www.bankofcanada.ca
+    static_tags: [type:news, scope:macro, region:canada, theme:monetary-policy]
+    adapter:
+      kind: rss
+      url: https://www.bankofcanada.ca/content_type/press-releases/feed/
+
+  # The CBRT serves Atom under a Content-Type of text/html. The rss adapter
+  # sniffs the body rather than trusting the header, so it parses fine -- but
+  # do not be alarmed if the URL renders as a wall of XML in a browser.
+  #
+  # Its dates arrive as "Sep 10, 2026, 2:00:00 PM" rather than ISO; rss-parser
+  # normalises them correctly, verified against the 10 Sep 2026 rate decision.
+  #
+  # Two further feeds exist on the same stem and are one line to enable:
+  #   .../RSS/Remarks+by+Governor   -- speeches, live (newest Aug 2026)
+  #   .../RSS/MPC+Decisions         -- stale since Dec 2025; the rate decisions
+  #                                    come through Press Releases instead, so
+  #                                    it is left out rather than duplicated.
+  - id: cbrt-press
+    institution: CBRT
+    name: Press releases
+    homepage: https://www.tcmb.gov.tr
+    static_tags: [type:news, scope:macro, region:turkey, theme:monetary-policy]
+    adapter:
+      kind: rss
+      url: https://www.tcmb.gov.tr/wps/wcm/connect/EN/TCMB+EN/Bottom+Menu/Other/RSS/Press+Releases
+
+  - id: cbrt-publications
+    institution: CBRT
+    name: Publications
+    homepage: https://www.tcmb.gov.tr
+    static_tags: [type:research, scope:macro, region:turkey]
+    adapter:
+      kind: rss
+      url: https://www.tcmb.gov.tr/wps/wcm/connect/EN/TCMB+EN/Bottom+Menu/Other/RSS/Publications
+
+  # ===========================================================================
+  # 2. REGIONAL FED RESEARCH
+  # The Federal Reserve's district banks publish the best free macro writing
+  # there is, on ordinary WordPress feeds.
+  # ===========================================================================
+
+  - id: nyfed-liberty-street
+    institution: New York Fed
+    name: Liberty Street Economics
+    homepage: https://libertystreeteconomics.newyorkfed.org
+    static_tags: [type:research, scope:macro, region:us]
+    adapter:
+      kind: rss
+      url: https://libertystreeteconomics.newyorkfed.org/feed/
+
+  - id: fred-blog
+    institution: St. Louis Fed
+    name: FRED Blog
+    homepage: https://fredblog.stlouisfed.org
+    static_tags: [type:commentary, scope:macro, region:us]
+    adapter:
+      kind: rss
+      url: https://fredblog.stlouisfed.org/feed/
+
+  # ===========================================================================
+  # 3. REGULATORS AND ACADEMIC RESEARCH
+  # ===========================================================================
+
+  - id: sec-press
+    institution: SEC
+    name: Press releases
+    homepage: https://www.sec.gov
+    static_tags: [type:news, region:us]
+    adapter:
+      kind: rss
+      url: https://www.sec.gov/news/pressreleases.rss
+
+  - id: nber-working-papers
+    institution: NBER
+    name: New working papers
+    homepage: https://www.nber.org
+    static_tags: [type:research, region:us]
+    adapter:
+      # Note the `back.` host -- www.nber.org/rss/new.xml does not serve this.
+      kind: rss
+      url: https://back.nber.org/rss/new.xml
+
+  - id: bruegel-publications
+    institution: Bruegel
+    name: Publications
+    homepage: https://www.bruegel.org
+    static_tags: [type:research, scope:macro, region:europe]
+    adapter:
+      kind: rss
+      url: https://www.bruegel.org/rss.xml
+
+  # ===========================================================================
+  # 4. ASSET MANAGERS AND FUND HOUSES — insights and market outlooks
+  # ===========================================================================
   #
   # These insight hubs are JavaScript search applications (PIMCO's is Coveo —
   # the `@publishz32xdate` field name and the `f:category=[guid,...]` fragment
@@ -110,6 +226,12 @@ sources:
   # listing page to capture the real JSON endpoint, then replace the block
   # with a `kind: json` adapter — richer data, native categories, no per-article
   # fetches.
+  #
+  # Each of these sitemaps carries a <lastmod> on every URL, which is what
+  # keeps the section usable: most of these article pages publish no
+  # OpenGraph or JSON-LD date of their own, so lastmod is the ordering. The
+  # adapter marks such dates estimated and ranks them below publisher-dated
+  # items, which is the correct outcome, not a defect.
   # ---------------------------------------------------------------------------
 
   - id: pimco-insights
@@ -252,3 +374,190 @@ sources:
       kind: sitemap
       url: https://institute.bankofamerica.com/sitemap.xml
       max_new_per_run: 5
+
+  - id: vanguard-insights
+    institution: Vanguard
+    name: Insights
+    homepage: https://advisors.vanguard.com
+    static_tags: [type:insight]
+    adapter:
+      kind: sitemap
+      # advisors.vanguard.com, not corporate.vanguard.com: the corporate
+      # sitemap is 187 press releases and 7 insight pages, while this one is
+      # 132 `/insights/article/` pieces -- the market-perspectives and
+      # economic-outlook writing you actually want.
+      url: https://advisors.vanguard.com/sitemaps/en.sitemap.xml
+      include: ['/insights/article/']
+      max_new_per_run: 5
+
+  - id: invesco-insights
+    institution: Invesco
+    name: Insights
+    homepage: https://www.invesco.com
+    static_tags: [type:insight]
+    adapter:
+      kind: sitemap
+      # Invesco's WAF is inverted: it answers 406 to a Chrome user-agent and
+      # 200 to a plain bot one, so this works for the worker and appears dead
+      # if you paste it into a browser. 306 flat `/us/en/insights/<slug>.html`
+      # articles; `/insights/topic/` is the section furniture, not articles.
+      url: https://www.invesco.com/us/en/sitemap.xml
+      include: ['/us/en/insights/']
+      exclude: ['/insights/topic/']
+      max_new_per_run: 5
+
+  - id: ishares-insights
+    institution: iShares
+    name: Insights
+    homepage: https://www.ishares.com
+    static_tags: [type:insight]
+    adapter:
+      kind: sitemap
+      # Portfolio Insights and Inside the Market. Separate from blackrock-bii:
+      # the Investment Institute is house macro research, this is the ETF
+      # desk's market commentary, and they do not overlap.
+      url: https://www.ishares.com/us/sitemap.xml
+      include: ['/insights/']
+      exclude: ['/investor-education/']
+      max_new_per_run: 5
+
+  - id: ssga-insights
+    institution: State Street
+    name: SSGA Insights
+    homepage: https://www.ssga.com
+    static_tags: [type:insight]
+    adapter:
+      kind: sitemap
+      # SSGA publishes the same sitemap under institutional/, intermediary/
+      # and individual/ audiences. Checked: no article tail appears under more
+      # than one, so there is nothing to deduplicate -- but individual/ is
+      # retail education rather than market work, so it is left out.
+      url: https://www.ssga.com/us/en/sitemap.xml
+      include: ['/institutional/insights/', '/intermediary/insights/']
+      max_new_per_run: 5
+
+  # ===========================================================================
+  # 5. RATING AGENCIES
+  #
+  # Two of the big three are reachable and one is not. S&P Global answers 403
+  # to every request including robots.txt -- the same hard Akamai block as
+  # imf-blog, so there is no URL to fix and no entry below. If you want S&P it
+  # needs the browser adapter.
+  # ===========================================================================
+
+  - id: fitch-research
+    institution: Fitch Ratings
+    name: Research and rating actions
+    homepage: https://www.fitchratings.com
+    static_tags: [type:research, asset:credit]
+    adapter:
+      kind: sitemap
+      # The research leaf of the sitemap index: 500 URLs, every one with a
+      # lastmod, refreshed daily. This is a firehose of individual rating
+      # actions ("Fitch Upgrades City of Porto to A"), which is exactly what a
+      # rating agency is for -- take_per_run keeps it from flooding the panel.
+      #
+      # Caveat worth knowing: fitchratings.com is a Gatsby app, so the server
+      # HTML carries no OpenGraph title. Titles here are therefore derived
+      # from the URL slug, which means sentence case and a trailing date
+      # ("Celanese corp 10 09 2026"). Readable, but not the publisher's own
+      # wording. Fixing it properly means the browser adapter.
+      url: https://www.fitchratings.com/sitemap-research.xml
+      include: ['/research/']
+      exclude: [':slug']        # one route template is published in the sitemap
+      max_new_per_run: 5
+
+  - id: moodys-insights
+    institution: Moody's
+    name: Insights
+    homepage: https://www.moodys.com
+    static_tags: [type:insight, asset:credit]
+    adapter:
+      kind: sitemap
+      # Found with `npm run discover -- https://www.moodys.com/web/en/us/insights.html`.
+      # Do not use www.moodys.com/sitemap.xml: it is 22,000 URLs of credit-rating
+      # entity pages and legacy .aspx, with no insights in it. This one is 2761
+      # URLs, all dated. The exclusions drop Moody's non-credit lines -- RMS
+      # catastrophe/insurance modelling and the KYC product -- which are half
+      # the file and nothing to do with markets.
+      url: https://www.moodys.com/web/sitemap.xml
+      include: ['/insights/']
+      exclude:
+        - '/insights/insurance/'
+        - '/kyc/'
+        # The 18 section landing pages -- /insights/tariffs.html,
+        # /insights/data-visualizations.html and the rest -- all sit one
+        # segment under /insights/, which articles never do.
+        - '/insights/[^/]+\.html$'
+        # Two topic hubs that sit at article depth under credit-risk/ rather
+        # than at the section root, so the rule above does not catch them.
+        # They carry a fresh lastmod on every CMS rebuild and would otherwise
+        # keep resurfacing at the top of the list.
+        - '/insights/credit-risk/(emerging-markets|sustainable-finance-and-credit)\.html$'
+      max_new_per_run: 5
+
+  # ===========================================================================
+  # 6. EUROPEAN BANK RESEARCH
+  #
+  # Thin on purpose, because most of it is unreachable rather than unwanted.
+  # Checked and rejected on 2026-09-11: Rabobank, Allianz Research and
+  # Allianz Trade (403), Deutsche Bank Research (410 -- retired), Nordea,
+  # Danske, Commerzbank and Santander (404, no feed), UniCredit and Scope
+  # Ratings (single-page apps whose sitemaps list route templates, not URLs).
+  # Each would need the browser adapter or a discover run.
+  # ===========================================================================
+
+  - id: ing-think
+    institution: ING
+    name: THINK
+    homepage: https://think.ing.com
+    static_tags: [type:insight, scope:macro, region:europe]
+    adapter:
+      # A real RSS feed with full summaries -- the best-formed source in this
+      # section by some margin, and the only European bank here that publishes
+      # one at all.
+      kind: rss
+      url: https://think.ing.com/rss
+
+  # Disabled 2026-09-11, and the reason is worth reading before you enable it.
+  # BBVA Research is WordPress but its /feed/ 404s, so the only way in is the
+  # sitemap -- and that sitemap was last generated 2026-06-05, three months
+  # stale, so it would import nothing current. It is also split across 21
+  # rolling `publicacion-sitemapN.xml` children, all sharing one lastmod, so
+  # the adapter cannot pick the newest and the number below goes stale as the
+  # archive grows. Most of the content is Spanish. Revive with:
+  #   npm run discover -- https://www.bbvaresearch.com/en/
+  - id: bbva-research
+    enabled: false
+    institution: BBVA
+    name: BBVA Research
+    homepage: https://www.bbvaresearch.com
+    static_tags: [type:research, scope:macro]
+    adapter:
+      kind: sitemap
+      url: https://www.bbvaresearch.com/publicacion-sitemap21.xml
+      include: ['/publicaciones/']
+      max_new_per_run: 5
+
+  # ===========================================================================
+  # 7. INDEPENDENT COMMENTARY
+  # Not an institution's house view -- which is the entire point of having it.
+  # ===========================================================================
+
+  - id: econbrowser
+    institution: Econbrowser
+    name: Econbrowser
+    homepage: https://econbrowser.com
+    static_tags: [type:commentary, scope:macro]
+    adapter:
+      kind: rss
+      url: https://econbrowser.com/feed
+
+  - id: klement-on-investing
+    institution: Klement on Investing
+    name: Klement on Investing
+    homepage: https://klementoninvesting.substack.com
+    static_tags: [type:commentary]
+    adapter:
+      kind: rss
+      url: https://klementoninvesting.substack.com/feed

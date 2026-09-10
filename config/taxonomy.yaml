@@ -29,7 +29,11 @@ facets:
 
   - id: region
     label: Region
-    values: [us, europe, uk, japan, china, em, global]
+    # `turkey`, `canada` and `switzerland` are named rather than folded into
+    # `em`/`global` because each has a central bank in the source list whose
+    # decisions are the reason to read it.
+    values:
+      [us, europe, uk, japan, china, em, global, turkey, canada, switzerland]
 
   - id: theme
     label: Theme
@@ -58,6 +62,10 @@ facets:
 #     it is left to the keyword rules.
 #   - The retirement and wealth-planning stream JPMAM publishes heavily
 #     ("Defined Contribution", "College Savings", "Target Date Investing").
+#   - Audience segments rather than subjects: "Financial Professional",
+#     "Individual Investor", "Institutional", "PFS", "EDJONES". The fund
+#     houses added in section 4 of sources.yaml tag by who a piece is sold to,
+#     which says nothing about what it argues.
 #     It is real content with no facet to land in; it wants a `audience:` or
 #     `planning:` facet rather than a forced fit into asset class.
 native_map:
@@ -104,6 +112,8 @@ native_map:
   "Monetary Policy": [scope:macro, theme:monetary-policy]
   "Central Bank": [scope:macro, theme:monetary-policy]
   "Federal Reserve": [scope:macro, theme:monetary-policy, region:us]
+  # Emitted by the Fed's own press feed once the FOMC entries started arriving.
+  "Federal Open Market Committee (FOMC)": [scope:macro, theme:monetary-policy, region:us]
   "Interest Rates": [scope:macro, theme:monetary-policy, asset:rates]
   "Fiscal Policy": [scope:macro, theme:monetary-policy]
   "Fiscal Stimulus": [scope:macro, theme:monetary-policy]

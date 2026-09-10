@@ -357,9 +357,18 @@ unchanged feed costs nothing.
 
 - The source list in `config/sources.yaml` has been run against the live sites,
   but that is a snapshot, not a guarantee — `imf-blog` is disabled behind
-  Akamai, and `bofa-institute` spent several hours returning 400 before
+  Akamai, `bbva-research` is disabled behind a sitemap its publisher stopped
+  regenerating, and `bofa-institute` spent several hours returning 400 before
   recovering on its own. Run `doctor` before trusting any of it, and read the
   comments: each dead or awkward source says what was tried.
+- Three institutions were wanted and could not be reached: **S&P Global**
+  answers 403 to everything including `robots.txt`, and **Rabobank** and
+  **Allianz Research** do the same to their feed URLs. Reaching any of them
+  needs the browser adapter.
+- A browser user-agent is not the thing to test a candidate URL with.
+  `invesco.com` answers 406 to Chrome and 200 to this project's own agent, so
+  a source can look dead in a browser tab and be perfectly alive to the worker.
+  Test with `doctor`, not with your browser.
 - Only one source (`goldman-insights`) runs on a content API. The rest are
   feeds and sitemaps, so roughly two in five stored articles carry an estimated
   date. Each successful `discover` hunt moves a source out of that group.
