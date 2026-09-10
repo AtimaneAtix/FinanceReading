@@ -52,7 +52,12 @@ export async function runOnce(force = false): Promise<SourceOutcome[]> {
 
   const db = openDb();
   try {
-    syncSources(db, sourcesFile.sources, sourcesFile.defaults.poll_minutes);
+    syncSources(
+      db,
+      sourcesFile.sources,
+      sourcesFile.defaults.poll_minutes,
+      sourcesFile.defaults.take_per_run,
+    );
     const tagger = new Tagger(taxonomy);
     const due = force
       ? allSources(db).filter((s) => s.enabled === 1 && s.in_config === 1)

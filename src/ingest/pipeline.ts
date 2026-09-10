@@ -9,7 +9,14 @@ import {
 } from './canonical.ts';
 import { Tagger } from './tagger.ts';
 import { runAdapter, AdapterError, type AdapterResult, type RawItem } from './adapters/index.ts';
-import { insertItems, recordFetch, type DB, type SourceRow, type InsertStats } from '../db/index.ts';
+import {
+  insertItems,
+  knownHashes,
+  recordFetch,
+  type DB,
+  type SourceRow,
+  type InsertStats,
+} from '../db/index.ts';
 
 export interface SourceOutcome {
   sourceId: string;
@@ -26,7 +33,11 @@ export interface SourceOutcome {
 interface StoredConfig {
   adapter: AdapterConfig;
   fallback: AdapterConfig[];
+  takePerRun: number;
 }
+
+/** Used when a row was stored before `take_per_run` existed. */
+const DEFAULT_TAKE_PER_RUN = 5;
 
 export function parseSourceConfig(row: SourceRow): StoredConfig {
   const raw = JSON.parse(row.config_json) as unknown;
@@ -40,7 +51,46 @@ export function parseSourceConfig(row: SourceRow): StoredConfig {
     const p = AdapterConfig.safeParse(f);
     if (p.success) fallback.push(p.data);
   }
-  return { adapter: parsed.data, fallback };
+  const take = (raw as StoredConfig).takePerRun;
+  return {
+    adapter: parsed.data,
+    fallback,
+    takePerRun: Number.isFinite(take) && take > 0 ? take : DEFAULT_TAKE_PER_RUN,
+  };
+}
+
+type Normalised = ReturnType<typeof normaliseItems>['items'][number];
+
+/**
+ * Picks the newest few articles this source has that are not stored already.
+ *
+ * Skipping what is stored *before* the cap is the whole trick. Take the newest
+ * five outright and the same five are chosen again on every run, so the sixth
+ * article never arrives however long the panel runs; skipping them first turns
+ * the cap into a queue that drains a few at a time.
+ *
+ * Articles the publisher dated win over ones the crawler had to guess at,
+ * which is the order the panel reads in too.
+ */
+export function selectNewest(
+  db: DB,
+  items: Normalised[],
+  limit: number,
+): { items: Normalised[]; held: number; known: number } {
+  const known = knownHashes(
+    db,
+    items.map((i) => i.canonicalHash),
+  );
+  const fresh = items.filter((i) => !known.has(i.canonicalHash));
+  if (fresh.length <= limit) return { items: fresh, held: 0, known: known.size };
+
+  const ranked = [...fresh]
+    .sort(
+      (a, b) =>
+        Number(a.dateEstimated) - Number(b.dateEstimated) || b.publishedAt - a.publishedAt,
+    )
+    .slice(0, limit);
+  return { items: ranked, held: fresh.length - limit, known: known.size };
 }
 
 /**
@@ -174,8 +224,20 @@ export async function ingestSource(
   const { items, skipped } = normaliseItems(result.items, row, tagger);
   outcome.notes.push(...skipped.slice(0, 5));
   outcome.fetched = items.length;
-  outcome.stats = insertItems(db, items);
 
+  const selection = selectNewest(db, items, config.takePerRun);
+  if (selection.held > 0) {
+    outcome.notes.push(
+      `took the newest ${config.takePerRun}; ${selection.held} more are waiting for the next run`,
+    );
+  }
+  outcome.stats = insertItems(db, selection.items);
+  // Articles skipped because they are already stored are duplicates found one
+  // step earlier than they used to be, and still worth reporting as such.
+  outcome.stats.duplicateUrl += selection.known;
+
+  // Emptiness is judged on what the source returned, not on what survived the
+  // cap: a feed whose every article is already stored is quiet, not broken.
   if (items.length === 0 && !result.healthyEmpty) {
     // Zero items from a source that should have some is a broken scraper, and
     // saying so is the difference between noticing and silently losing a feed.

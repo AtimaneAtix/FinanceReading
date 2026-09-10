@@ -34,6 +34,10 @@ function use(sources: unknown[]): void {
   workspace = makeWorkspace(sources);
 }
 
+function useTaking(perRun: number, sources: unknown[]): void {
+  workspace = makeWorkspace(sources, { poll_minutes: 30, take_per_run: perRun });
+}
+
 function rssSource(base: string) {
   return {
     id: 'fixture-rss',
@@ -256,6 +260,45 @@ describe('json adapter', () => {
     const [outcome] = await runOnce(true);
     expect(outcome?.status).toBe('empty');
     expect(outcome?.notes.join(' ')).toContain('check the field paths');
+  });
+});
+
+describe('taking only the newest few per run', () => {
+  it('drains the backlog a few at a time instead of re-picking the same ones', async () => {
+    // The trap this guards: cap the newest two outright and the same two are
+    // chosen on every run, so the third article never arrives.
+    useTaking(2, [rssSource(fixture.base)]);
+
+    const [first] = await runOnce(true);
+    expect(first?.stats.inserted).toBe(2);
+    expect(first?.notes.join(' ')).toContain('waiting for the next run');
+    expect(storedItems()).toHaveLength(2);
+
+    for (let run = 0; run < 2; run++) await runOnce(true);
+    expect(storedItems()).toHaveLength(ARTICLE_COUNT);
+  });
+
+  it('takes the newest, not whichever the feed happened to list first', async () => {
+    useTaking(1, [rssSource(fixture.base)]);
+    await runOnce(true);
+    expect(storedItems()[0]?.title).toBe('Credit Spreads in 2026: Where the Value Is');
+  });
+
+  it('calls a source whose every article is already stored quiet, not broken', async () => {
+    useTaking(ARTICLE_COUNT, [rssSource(fixture.base)]);
+    await runOnce(true);
+
+    const [second] = await runOnce(true);
+    // Nothing survives the cap on the second run, but nothing is wrong either.
+    expect(second?.status).toBe('ok');
+    expect(second?.stats.inserted).toBe(0);
+  });
+
+  it('refuses a sitemap that crawls more than the source may keep', async () => {
+    // The adapter marks every URL it visits as seen, so the difference would
+    // be lost rather than held over. Better to refuse than to lose articles.
+    useTaking(5, [sitemapSource(fixture.base)]);
+    await expect(runOnce(true)).rejects.toThrow(/marks every URL it visits as seen/);
   });
 });
 

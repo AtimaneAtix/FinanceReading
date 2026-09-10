@@ -141,6 +141,16 @@ export const SourceConfig = z.object({
   poll_minutes: z.number().int().min(5).max(1440).optional(),
   /** Tags every item from this source receives, e.g. ["scope:macro"]. */
   static_tags: z.array(z.string()).default([]),
+  /**
+   * How many articles this source may contribute in one run. Defaults to
+   * `defaults.take_per_run`.
+   *
+   * The panel is a reading list, not an archive. A few per source per run
+   * keeps every institution visible instead of letting whichever one publishes
+   * most bury the rest, and it means a first run against a fresh database
+   * fills with what is current rather than with a decade of back catalogue.
+   */
+  take_per_run: z.number().int().min(1).max(200).optional(),
   adapter: AdapterConfig,
   /** Tried in order when the primary adapter yields nothing or throws. */
   fallback: z.array(AdapterConfig).default([]),
@@ -148,7 +158,12 @@ export const SourceConfig = z.object({
 export type SourceConfig = z.infer<typeof SourceConfig>;
 
 export const SourcesFile = z.object({
-  defaults: z.object({ poll_minutes: z.number().int().min(5).default(30) }).default({ poll_minutes: 30 }),
+  defaults: z
+    .object({
+      poll_minutes: z.number().int().min(5).default(30),
+      take_per_run: z.number().int().min(1).max(200).default(5),
+    })
+    .default({ poll_minutes: 30, take_per_run: 5 }),
   sources: z.array(SourceConfig),
 });
 export type SourcesFile = z.infer<typeof SourcesFile>;
@@ -235,6 +250,30 @@ export function validateStaticTags(sources: SourcesFile, taxonomy: TaxonomyFile)
   for (const s of sources.sources) {
     for (const t of s.static_tags) {
       if (!known.has(t)) problems.push(`source "${s.id}" declares unknown static tag "${t}"`);
+    }
+    problems.push(...crawlBudgetProblems(s, sources.defaults.take_per_run));
+  }
+  return problems;
+}
+
+/**
+ * The sitemap adapter records every URL it visits so a broken page is not
+ * retried forever, which means an article it fetched and the run then dropped
+ * is never offered again. Fetching more than the source is allowed to keep
+ * therefore loses articles silently, and that is worth refusing to start over.
+ */
+function crawlBudgetProblems(source: SourceConfig, defaultTake: number): string[] {
+  const take = source.take_per_run ?? defaultTake;
+  const problems: string[] = [];
+  for (const adapter of [source.adapter, ...source.fallback]) {
+    if (adapter.kind !== 'sitemap') continue;
+    if (adapter.max_new_per_run > take) {
+      problems.push(
+        `source "${source.id}" fetches up to ${adapter.max_new_per_run} article(s) per run but ` +
+          `keeps only ${take}; the sitemap adapter marks every URL it visits as seen, so the ` +
+          `rest would be lost rather than held over. Lower max_new_per_run to ${take}, or ` +
+          'raise take_per_run.',
+      );
     }
   }
   return problems;

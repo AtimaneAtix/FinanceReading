@@ -254,6 +254,33 @@ describe('article metadata', () => {
   });
 });
 
+describe('dates a CMS invents its own name for', () => {
+  it('reads a published date from an unconventional meta name', () => {
+    // Morgan Stanley's. Without this the article looks undated and inherits
+    // the sitemap's rebuild timestamp, which dates a 2024 piece to today.
+    const meta = extractArticleMeta(
+      `<html><head><meta name="content_publishedAt" content="2024-08-28T04:00:00Z">` +
+        `<meta property="og:title" content="Convention Wisdom"></head><body></body></html>`,
+    );
+    expect(meta.publishedAt).toBe('2024-08-28T04:00:00Z');
+  });
+
+  it('ignores a modification timestamp, which is the same proxy as lastmod', () => {
+    const meta = extractArticleMeta(
+      `<html><head><meta name="content_updatedAt" content="2026-09-09T00:00:00Z">` +
+        `<meta name="og:updated_time" content="2026-09-09T00:00:00Z"></head><body></body></html>`,
+    );
+    expect(meta.publishedAt).toBeNull();
+  });
+
+  it('requires the value to be a date, so a publisher name is not read as one', () => {
+    const meta = extractArticleMeta(
+      `<html><head><meta name="publisher" content="Morgan Stanley"></head><body></body></html>`,
+    );
+    expect(meta.publishedAt).toBeNull();
+  });
+});
+
 describe('robots.txt', () => {
   it('applies the most specific matching rule', () => {
     const rules = parseRobots(`User-agent: *\nDisallow: /private/\nAllow: /private/public/\n`);

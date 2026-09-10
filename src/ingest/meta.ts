@@ -44,8 +44,12 @@ export function extractArticleMeta(html: string): ArticleMeta {
     meta('meta[name="pubdate"]') ??
     meta('meta[name="dc.date"]') ??
     meta('meta[name="DC.date.issued"]') ??
-    firstString(jsonLd, ['datePublished', 'dateCreated', 'dateModified']) ??
-    nonEmpty($('time[datetime]').first().attr('datetime') ?? '');
+    firstString(jsonLd, ['datePublished', 'dateCreated']) ??
+    publishedFromAnyMeta($) ??
+    nonEmpty($('time[datetime]').first().attr('datetime') ?? '') ??
+    // Last resort, and a grudging one: a modification timestamp is the same
+    // kind of proxy as a sitemap's lastmod.
+    firstString(jsonLd, ['dateModified']);
 
   const categories = new Set<string>();
   $('meta[property="article:section"], meta[property="article:tag"]').each((_, el) => {
@@ -69,6 +73,34 @@ export function extractArticleMeta(html: string): ArticleMeta {
     publishedAt,
     categories: [...categories].slice(0, 20),
   };
+}
+
+/**
+ * Any meta tag whose *name* looks like a publication date.
+ *
+ * The named list above covers the conventions. This covers the CMS that
+ * invented its own: Morgan Stanley publishes `content_publishedAt`, and
+ * without this every article on the site reads as undated and inherits the
+ * sitemap's rebuild timestamp — which is how a 2024 election piece ends up
+ * dated this morning.
+ *
+ * Modification timestamps are excluded on purpose. The name alone is not
+ * enough to trust, so the value must parse as a date too: that is what stops
+ * `<meta name="publisher" content="Morgan Stanley">` from being read as one.
+ */
+function publishedFromAnyMeta($: cheerio.CheerioAPI): string | null {
+  const found: string[] = [];
+  $('meta[content]').each((_, el) => {
+    const tag = $(el);
+    const name = (tag.attr('name') ?? tag.attr('property') ?? tag.attr('itemprop') ?? '')
+      .toLowerCase();
+    if (name === '') return;
+    if (!/pub[-_.]?(lish|date)|date[-_.]?(published|posted|created)/.test(name)) return;
+    if (/modif|updat|revis|expir/.test(name)) return;
+    const value = tag.attr('content')?.trim();
+    if (value && /\d{4}/.test(value) && !Number.isNaN(Date.parse(value))) found.push(value);
+  });
+  return found[0] ?? null;
 }
 
 function readJsonLd($: cheerio.CheerioAPI): Record<string, unknown>[] {

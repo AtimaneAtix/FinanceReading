@@ -60,7 +60,12 @@ export interface SourceRow {
  * Makes the sources table match the YAML. Sources dropped from the config are
  * marked `in_config = 0` rather than deleted, so their articles stay readable.
  */
-export function syncSources(db: DB, sources: SourceConfig[], defaultPoll: number): void {
+export function syncSources(
+  db: DB,
+  sources: SourceConfig[],
+  defaultPoll: number,
+  defaultTake: number,
+): void {
   const upsert = db.prepare(`
     INSERT INTO sources (id, institution, name, homepage, adapter_kind, config_json,
                          static_tags, poll_minutes, enabled, in_config)
@@ -87,7 +92,11 @@ export function syncSources(db: DB, sources: SourceConfig[], defaultPoll: number
         name: s.name,
         homepage: s.homepage,
         adapter_kind: s.adapter.kind,
-        config_json: JSON.stringify({ adapter: s.adapter, fallback: s.fallback }),
+        config_json: JSON.stringify({
+          adapter: s.adapter,
+          fallback: s.fallback,
+          takePerRun: s.take_per_run ?? defaultTake,
+        }),
         static_tags: JSON.stringify(s.static_tags),
         poll_minutes: s.poll_minutes ?? defaultPoll,
         enabled: s.enabled ? 1 : 0,
@@ -233,6 +242,14 @@ export function markUrlsSeen(db: DB, sourceId: string, hashes: string[]): void {
   db.transaction(() => {
     for (const h of hashes) stmt.run(sourceId, h, now);
   })();
+}
+
+/** Which of these canonical hashes are already stored, from any source. */
+export function knownHashes(db: DB, hashes: string[]): Set<string> {
+  const stmt = db.prepare('SELECT 1 FROM items WHERE canonical_hash = ?');
+  const out = new Set<string>();
+  for (const h of hashes) if (stmt.get(h)) out.add(h);
+  return out;
 }
 
 export function filterUnseen(db: DB, sourceId: string, hashes: string[]): Set<string> {

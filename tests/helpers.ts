@@ -14,8 +14,15 @@ export interface TempWorkspace {
 /**
  * A throwaway config + database for one test, wired through the same
  * environment variables the real deployment uses.
+ *
+ * `take_per_run` is deliberately high here. Production keeps it at 5, but a
+ * test of an adapter should measure the adapter, not the ration; the tests
+ * that exercise the ration set their own.
  */
-export function makeWorkspace(sources: unknown[], defaults = { poll_minutes: 30 }): TempWorkspace {
+export function makeWorkspace(
+  sources: unknown[],
+  defaults: Record<string, unknown> = { poll_minutes: 30, take_per_run: 50 },
+): TempWorkspace {
   const dir = mkdtempSync(join(tmpdir(), 'finance-reading-'));
   const sourcesPath = join(dir, 'sources.yaml');
   const dbPath = join(dir, 'test.db');

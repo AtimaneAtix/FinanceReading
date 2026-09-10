@@ -153,11 +153,17 @@ export async function fetchSitemap(
 
   for (const [hash, entry] of fresh) {
     // Stop once this run has taken its allowance of articles that date
-    // themselves nowhere. `fresh` is newest-lastmod-first and every URL
-    // visited below is marked seen, so the next run resumes past this point
-    // rather than re-reading the same stretch: a source that dates nothing
-    // becomes a steady trickle of its most recent work instead of one dump
-    // that lands in the panel's estimated block whole.
+    // themselves nowhere. Every URL visited below is marked seen, so the next
+    // run resumes past this point rather than re-reading the same stretch, and
+    // the source arrives a few at a time instead of as one dump that lands in
+    // the panel's estimated block whole.
+    //
+    // This bounds the volume. It does not identify the newest articles, and it
+    // must not be read as doing so: `fresh` is in lastmod order, lastmod is a
+    // rebuild timestamp, and Morgan Stanley's most recently rebuilt pages are
+    // articles from 2024. Reading the publisher's own date is the only real
+    // answer, which is what `extractArticleMeta` is for; this is the ceiling
+    // for what that fails to find.
     if (undated >= config.max_undated_per_run) {
       notes.push(
         `stopped at ${config.max_undated_per_run} article(s) with no date of their own; ` +

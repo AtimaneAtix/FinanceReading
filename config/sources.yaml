@@ -13,6 +13,17 @@
 
 defaults:
   poll_minutes: 30
+  # How many articles each source may contribute per run. The panel is a
+  # reading list, not an archive: a few per source keeps every institution
+  # visible instead of letting whichever one publishes most bury the rest,
+  # and a first run fills with what is current rather than with a decade of
+  # back catalogue. What does not fit waits for the next run.
+  #
+  # A sitemap adapter's own max_new_per_run is a *crawl* budget and must not
+  # exceed this -- it records every URL it visits, so anything it fetched and
+  # the run then dropped would never be offered again. The config check
+  # refuses to start on that combination.
+  take_per_run: 5
 
 sources:
   # ---------------------------------------------------------------------------
@@ -68,7 +79,7 @@ sources:
       url: https://www.bis.org/default/sitemap.xml?page=1
       include: ['/publ/', '/publications/', '/media-releases/']
       exclude: ['/author/']
-      max_new_per_run: 25
+      max_new_per_run: 5
 
   # Disabled 2026-09-08. imf.org sits behind Akamai, which returns 403 to every
   # plain HTTP request regardless of user agent -- the feed URL is not the
@@ -111,7 +122,7 @@ sources:
       url: https://www.pimco.com/sitemap.xml
       include: ['/insights/', '/blog/']
       exclude: ['/funds/', '/literature/']
-      max_new_per_run: 25
+      max_new_per_run: 5
 
   # The one source here that publishes its own content API. Found by running
   # `npm run discover` against https://www.goldmansachs.com/insights and
@@ -145,15 +156,15 @@ sources:
           - cmsPageProps.series[].title
           - cmsPageProps.primaryTopic[].title
           - cmsPageProps.secondaryTopic[].title
-      # Newest 25 of the 2100. The handful of section landing pages mixed in
+      # Newest 5 of the 2100. The handful of section landing pages mixed in
       # carry no publishDate, so they sort last and never reach the cut.
-      max_new_per_run: 25
+      max_new_per_run: 5
     fallback:
       # If the feed moves, fall back to what this source used before it.
       - kind: sitemap
         url: https://www.goldmansachs.com/sitemap.xml
         include: ['/insights/']
-        max_new_per_run: 25
+        max_new_per_run: 5
 
   - id: morganstanley-ideas
     institution: Morgan Stanley
@@ -164,7 +175,7 @@ sources:
       kind: sitemap
       url: https://www.morganstanley.com/sitemap.xml
       include: ['/ideas/', '/insights/']
-      max_new_per_run: 25
+      max_new_per_run: 5
 
   - id: schroders-insights
     institution: Schroders
@@ -175,7 +186,7 @@ sources:
       kind: sitemap
       url: https://www.schroders.com/sitemap.xml
       include: ['/insights/']
-      max_new_per_run: 25
+      max_new_per_run: 5
 
   - id: blackrock-bii
     institution: BlackRock
@@ -193,7 +204,7 @@ sources:
         - '/(events|videos|insights|outlook|publications|global-insights)$'
         - '/(investment-stewardship|meet-the-bii-team)$'
         - '/thought-leadership/public-policy/'
-      max_new_per_run: 25
+      max_new_per_run: 5
 
   - id: jpmam-insights
     institution: J.P. Morgan Asset Management
@@ -208,7 +219,7 @@ sources:
       # institutional child directly avoids importing the Hong Kong Chinese site.
       url: https://am.jpmorgan.com/us/en/asset-management/institutional/sitemap.xml
       include: ['/insights/']
-      max_new_per_run: 25
+      max_new_per_run: 5
 
   - id: morningstar-markets
     institution: Morningstar
@@ -222,16 +233,15 @@ sources:
       # whose children are dated newest-first.
       url: https://media.morningstar.com/arc/outboundfeeds/sitemap/morningstar-all/
       include: ['/markets/', '/economy/', '/funds/', '/personal-finance/']
-      max_new_per_run: 25
+      max_new_per_run: 5
 
-  # Broken upstream since 2026-09-10, and left enabled deliberately so the
-  # health strip keeps saying so -- a failing source backs off exponentially,
-  # so the cost of watching it is close to nothing.
-  #
-  # /sitemap.xml is an index with exactly one child,
-  # .../bank-of-america-institute.sitemap.xml, and that child now answers 400.
-  # robots.txt advertises the same dead URL, and the site publishes no feed, so
-  # there is nothing to point at until they fix it. If it stays down:
+  # Flaky, not broken. /sitemap.xml is an index with exactly one child,
+  # .../bank-of-america-institute.sitemap.xml, and on 2026-09-10 that child
+  # answered 400 for several hours before recovering on its own. robots.txt
+  # advertises the same single URL and the site publishes no feed, so there is
+  # no second way in: when it flaps, the source fails, backs off and comes
+  # back. That is the health strip working, not a source to go and fix.
+  # If it ever stays down:
   #   npm run discover -- https://institute.bankofamerica.com/economic-insights.html
   - id: bofa-institute
     institution: Bank of America
@@ -241,4 +251,4 @@ sources:
     adapter:
       kind: sitemap
       url: https://institute.bankofamerica.com/sitemap.xml
-      max_new_per_run: 25
+      max_new_per_run: 5

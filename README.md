@@ -273,18 +273,42 @@ server reads. That is why there is no database server to run.
 - *Near*: a normalised title from the same institution within seven days. This
   is what collapses the `/us/en/` and `/eu/en/` copies of one article.
 
+**A few articles per source per run.** `take_per_run` (default 5) is what each
+source may contribute each time it is polled. The panel is a reading list, not
+an archive: a handful per source keeps every institution visible instead of
+letting whichever one publishes most bury the rest, and a first run fills with
+what is current rather than with a decade of back catalogue.
+
+What does not fit is not dropped — articles already stored are skipped
+*before* the cap, so the rest are still there next run and the queue drains a
+few at a time. Take the newest five outright and the same five are chosen on
+every run: the sixth article never arrives.
+
+One rule comes with it. A sitemap adapter's own `max_new_per_run` is a *crawl*
+budget, and it must not exceed `take_per_run`. The adapter records every URL it
+visits so a broken page is not retried forever, so an article it fetched and
+the run then dropped would never be offered again. `doctor` and the worker both
+refuse to start on that combination rather than lose articles quietly.
+
 **A date the publisher did not state is not a date.** A sitemap's `lastmod` is
 a rebuild timestamp — publishers re-stamp whole sections at once — so an
 article dated only by `lastmod` is marked estimated, and the panel sorts every
 genuinely dated article above the estimated ones rather than letting a
 decade-old page pose as this morning's news. Such a source is also rationed:
 `max_undated_per_run` (default 5) stops the run once it has taken that many
-undated articles. Entries are visited newest-first and every URL visited is
-recorded, so the next run resumes past that point — an undated source arrives
-as a trickle of its most recent work instead of one dump, and the crawl costs
-five requests rather than twenty-five. A source with real dates is untouched
-by this, which is the strongest practical argument for hunting a `json`
-endpoint.
+undated articles. Entries are visited in `lastmod` order and every URL visited
+is recorded, so the next run resumes past that point: the source arrives a few
+at a time instead of in one dump, and the crawl costs five requests rather than
+twenty-five.
+
+**Be clear about what that ration is not.** It bounds how much undated material
+enters at once; it does not know which articles are newest, because on a source
+like this nothing does. `lastmod` order is rebuild order — Morgan Stanley's
+five most recently rebuilt pages are articles from 2024 — so the ration picks
+the least-stale-looking few, not the latest few. The only real fix is to read
+the date the publisher actually stated, which is why `extractArticleMeta`
+casts as wide a net as it does, and why a `json` endpoint that states its dates
+outright is worth hunting for.
 
 **Zero items is treated as broken, not quiet.** A scraper that silently stops
 returning anything is the most common failure in a system like this, so a
@@ -300,6 +324,9 @@ unchanged feed costs nothing.
 ---
 
 ## Configuration
+
+`take_per_run` and `poll_minutes` are set under `defaults:` in
+`config/sources.yaml`, and either can be overridden on a single source.
 
 | Variable | Default | Purpose |
 |---|---|---|
@@ -329,10 +356,10 @@ unchanged feed costs nothing.
 ## Known limits
 
 - The source list in `config/sources.yaml` has been run against the live sites,
-  but that is a snapshot, not a guarantee — `bofa-institute` broke upstream the
-  same week, and `imf-blog` is disabled behind Akamai. Run `doctor` before
-  trusting any of it, and read the comments: each dead or awkward source says
-  what was tried.
+  but that is a snapshot, not a guarantee — `imf-blog` is disabled behind
+  Akamai, and `bofa-institute` spent several hours returning 400 before
+  recovering on its own. Run `doctor` before trusting any of it, and read the
+  comments: each dead or awkward source says what was tried.
 - Only one source (`goldman-insights`) runs on a content API. The rest are
   feeds and sitemaps, so roughly two in five stored articles carry an estimated
   date. Each successful `discover` hunt moves a source out of that group.
