@@ -112,19 +112,27 @@ export function queryItems(db: DB, query: ItemQuery, taxonomy: TaxonomyFile): Qu
   const params = [...where.params];
   let cursorSql = '';
   if (query.cursor) {
-    const [at, id] = query.cursor.split('.').map(Number);
-    if (Number.isFinite(at) && Number.isFinite(id)) {
-      // Keyset pagination: stable even while the worker inserts new rows.
-      cursorSql = desc
-        ? ' AND (items.published_at < ? OR (items.published_at = ? AND items.id < ?))'
-        : ' AND (items.published_at > ? OR (items.published_at = ? AND items.id > ?))';
-      params.push(at, at, id);
+    const [est, at, id] = query.cursor.split('.').map(Number);
+    if (Number.isFinite(est) && Number.isFinite(at) && Number.isFinite(id)) {
+      // Keyset pagination over the same three columns the ORDER BY uses, so a
+      // page boundary lands in the same place the sort would put it. Stable
+      // even while the worker inserts new rows.
+      const cmp = desc ? '<' : '>';
+      cursorSql =
+        ` AND (items.date_estimated > ?` +
+        ` OR (items.date_estimated = ? AND items.published_at ${cmp} ?)` +
+        ` OR (items.date_estimated = ? AND items.published_at = ? AND items.id ${cmp} ?))`;
+      params.push(est, est, at, est, at, id);
     }
   }
 
+  // Articles the publisher actually dated come first in both directions. An
+  // estimated date is the crawl's own guess, and letting it compete on equal
+  // terms puts a decade-old page above this morning's genuinely dated one --
+  // 41% of the corpus carries no publication date of its own.
   const order = desc
-    ? 'items.published_at DESC, items.id DESC'
-    : 'items.published_at ASC, items.id ASC';
+    ? 'items.date_estimated ASC, items.published_at DESC, items.id DESC'
+    : 'items.date_estimated ASC, items.published_at ASC, items.id ASC';
 
   const rows = db
     .prepare(
@@ -179,7 +187,7 @@ export function queryItems(db: DB, query: ItemQuery, taxonomy: TaxonomyFile): Qu
       dateEstimated: r.date_estimated === 1,
       tags: tagsById.get(r.id) ?? [],
     })),
-    nextCursor: hasMore && last ? `${last.published_at}.${last.id}` : null,
+    nextCursor: hasMore && last ? `${last.date_estimated}.${last.published_at}.${last.id}` : null,
     total: total.n,
     facets: facetCounts(db, query, taxonomy),
   };

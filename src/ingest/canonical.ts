@@ -87,6 +87,51 @@ export function titleKey(title: string): string {
   return key.length >= 8 ? key : '';
 }
 
+/**
+ * Removes the publisher's own site name from the end of a title.
+ *
+ * Sitemap and OpenGraph titles routinely carry it ("Income restored |
+ * BlackRock"), which wastes list width and reads as noise when the
+ * institution is already shown beside every headline.
+ *
+ * The suffix must actually match the institution, so a title whose separator
+ * belongs to the headline ("US CPI | what it means") survives intact.
+ */
+/** "Bank for International Settlements" -> "bis". Joining words do not count. */
+const JOINING_WORDS = new Set(['of', 'for', 'the', 'and', 'de', 'du', 'des', 'la', 'le']);
+
+function initials(phrase: string): string {
+  return phrase
+    .split(/[^A-Za-z0-9]+/)
+    .filter((w) => w !== '' && !JOINING_WORDS.has(w.toLowerCase()))
+    .map((w) => w[0]?.toLowerCase() ?? '')
+    .join('');
+}
+
+export function displayTitle(title: string, institution: string): string {
+  const trimmed = title.replace(/\s+/g, ' ').trim();
+  // Compare loosely: "J.P. Morgan" in the config, "JP Morgan" on the page.
+  const loose = (v: string) => v.toLowerCase().replace(/[^a-z0-9]+/g, '');
+  const target = loose(institution);
+  if (target === '') return trimmed;
+
+  const match = trimmed.match(
+    /^(.*?)\s+[|\u2013\u2014\u00b7\u2022-]\s+([^|\u2013\u2014\u00b7\u2022]+)$/,
+  );
+  const head = match?.[1]?.trim();
+  const tail = match?.[2] ?? '';
+  const tailKey = loose(tail);
+  if (head === undefined || head === '' || tailKey === '') return trimmed;
+
+  // Drop the tail when it is the institution, an extension of it ("BlackRock
+  // Investment Institute" against "BlackRock"), or the name the institution's
+  // acronym stands for -- sources are registered as "BIS" but sign their pages
+  // "Bank for International Settlements".
+  const isSiteName =
+    tailKey.startsWith(target) || target.startsWith(tailKey) || initials(tail) === target;
+  return isSiteName ? head : trimmed;
+}
+
 export interface ParsedDate {
   ms: number;
   /** True when the value could not be parsed and the caller must substitute now. */

@@ -166,6 +166,9 @@ function searchJson(offset: number, pageSize: number): string {
   });
 }
 
+/** The CMS rebuild timestamp on the undated fixture page. */
+export const UNDATED_LASTMOD = '2026-09-07T13:19:18Z';
+
 function sitemapIndex(base: string): string {
   return `<?xml version="1.0" encoding="UTF-8"?>
 <sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
@@ -212,6 +215,29 @@ export async function startFixtureServer(): Promise<Fixture> {
     if (url.pathname === '/insights') return send(200, 'text/html', listingHtml(base));
     if (url.pathname === '/static-insights') return send(200, 'text/html', staticListingHtml(base));
     if (url.pathname === '/rss.xml') return send(200, 'application/rss+xml', rssXml(base));
+    if (url.pathname === '/sitemap-undated.xml') {
+      // A page the CMS re-stamped today; the article behind it is years old
+      // and states no date anywhere.
+      return send(
+        200,
+        'application/xml',
+        `<?xml version="1.0"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">` +
+          `<url><loc>${base}/undated/stale-note</loc>` +
+          `<lastmod>${UNDATED_LASTMOD}</lastmod></url></urlset>`,
+      );
+    }
+
+    if (url.pathname === '/undated/stale-note') {
+      return send(
+        200,
+        'text/html',
+        `<!doctype html><html><head><title>A Note From Years Ago | Fixture Asset Management</title>` +
+          `<meta property="og:title" content="A Note From Years Ago">` +
+          `<meta property="og:description" content="No date is published anywhere on this page.">` +
+          `</head><body><h1>A Note From Years Ago</h1></body></html>`,
+      );
+    }
+
     if (url.pathname === '/sitemap.xml') return send(200, 'application/xml', sitemapIndex(base));
     if (url.pathname === '/sitemap-articles.xml') return send(200, 'application/xml', sitemapArticles(base));
     if (url.pathname === '/sitemap-legal.xml') {

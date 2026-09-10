@@ -1,5 +1,5 @@
 import { AdapterConfig } from '../config.ts';
-import { canonicalizeUrl, canonicalHash, titleKey, parseDate } from './canonical.ts';
+import { canonicalizeUrl, canonicalHash, titleKey, displayTitle, parseDate } from './canonical.ts';
 import { Tagger } from './tagger.ts';
 import { runAdapter, AdapterError, type AdapterResult, type RawItem } from './adapters/index.ts';
 import { insertItems, recordFetch, type DB, type SourceRow, type InsertStats } from '../db/index.ts';
@@ -56,7 +56,7 @@ export function normaliseItems(
       skipped.push(`unusable URL: ${item.url}`);
       continue;
     }
-    const title = item.title.replace(/\s+/g, ' ').trim();
+    const title = displayTitle(item.title, source.institution);
     if (title === '') {
       skipped.push(`empty title for ${canonical}`);
       continue;
@@ -75,7 +75,9 @@ export function normaliseItems(
       titleKey: titleKey(title),
       summary: item.summary ?? null,
       publishedAt: date.ms,
-      dateEstimated: date.estimated,
+      // A date the adapter flagged as a proxy is an estimate even though it
+      // parsed cleanly.
+      dateEstimated: date.estimated || item.dateIsWeak === true,
       nativeCategories: categories,
       tags: tagger.tag({ title, summary: item.summary, nativeCategories: categories, staticTags }),
     });

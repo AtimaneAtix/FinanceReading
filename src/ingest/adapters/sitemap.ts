@@ -101,14 +101,10 @@ export async function fetchSitemap(
   if (entries.length === 0) {
     throw new AdapterError(`No URLs found in sitemap ${config.url}`, false);
   }
-  if (entries.length > MAX_URLS_CONSIDERED) {
-    entries = entries.slice(0, MAX_URLS_CONSIDERED);
-    notes.push(`sitemap truncated to the first ${MAX_URLS_CONSIDERED} URLs`);
-  }
 
   const include = compileFilters(config.include);
   const exclude = compileFilters(config.exclude);
-  const candidates = entries.filter(
+  let candidates = entries.filter(
     (e) =>
       (include.length === 0 || include.some((re) => re.test(e.loc))) &&
       !exclude.some((re) => re.test(e.loc)),
@@ -123,6 +119,15 @@ export async function fetchSitemap(
 
   // Newest first, so a capped run picks up the most recent articles.
   candidates.sort((a, b) => sortKey(b.lastmod) - sortKey(a.lastmod));
+
+  // Cap only after filtering and sorting. Capping the raw sitemap instead --
+  // as this did originally -- discards by document order, and a big site lists
+  // author and product pages long before the articles: BIS puts 6153 /author
+  // URLs ahead of its publications. The newest article can sit past the cut.
+  if (candidates.length > MAX_URLS_CONSIDERED) {
+    candidates = candidates.slice(0, MAX_URLS_CONSIDERED);
+    notes.push(`considered the ${MAX_URLS_CONSIDERED} most recent matching URLs`);
+  }
 
   const hashes = new Map<string, SitemapEntry>();
   for (const entry of candidates) {
@@ -148,7 +153,13 @@ export async function fetchSitemap(
   for (const [hash, entry] of fresh) {
     processed.push(hash);
     if (!config.fetch_metadata) {
-      items.push({ url: entry.loc, title: titleFromUrl(entry.loc), publishedAt: entry.lastmod });
+      // lastmod is all we have here, and it tracks CMS rebuilds, not publication.
+      items.push({
+        url: entry.loc,
+        title: titleFromUrl(entry.loc),
+        publishedAt: entry.lastmod,
+        dateIsWeak: true,
+      });
       continue;
     }
     try {
@@ -163,14 +174,18 @@ export async function fetchSitemap(
       }
       const meta = extractArticleMeta(res.body);
       const title = meta.title ?? titleFromUrl(entry.loc);
-      // Prefer the article's own date; fall back to the sitemap's lastmod.
-      const published =
-        parseDate(meta.publishedAt).estimated && entry.lastmod ? entry.lastmod : meta.publishedAt;
+      // Prefer the article's own date. Falling back to the sitemap's lastmod
+      // keeps an ordering to work with, but lastmod is a rebuild timestamp --
+      // publishers re-stamp whole sections at once -- so it is marked weak and
+      // surfaces in the panel as an estimate rather than as fresh news.
+      const ownDate = parseDate(meta.publishedAt);
+      const useLastmod = ownDate.estimated && entry.lastmod !== null;
       items.push({
         url: res.finalUrl || entry.loc,
         title,
         summary: meta.summary,
-        publishedAt: published,
+        publishedAt: useLastmod ? entry.lastmod : meta.publishedAt,
+        dateIsWeak: ownDate.estimated,
         categories: meta.categories,
       });
     } catch (err) {

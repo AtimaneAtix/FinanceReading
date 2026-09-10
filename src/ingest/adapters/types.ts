@@ -6,6 +6,13 @@ export interface RawItem {
   title: string;
   summary?: string | null;
   publishedAt?: unknown;
+  /**
+   * True when `publishedAt` is a proxy rather than a real publication date --
+   * a sitemap `lastmod`, which moves whenever the CMS rebuilds the page. It
+   * parses as a perfectly good date, so without this flag a decade-old article
+   * enters the panel looking like this morning's news.
+   */
+  dateIsWeak?: boolean;
   /** The publisher's own category labels or GUIDs, verbatim. */
   categories?: string[];
 }

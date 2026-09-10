@@ -1,5 +1,11 @@
 import { describe, it, expect, beforeAll, afterAll, afterEach } from 'vitest';
-import { startFixtureServer, SEARCH_TOKEN, ARTICLE_COUNT, type Fixture } from './fixture-server.ts';
+import {
+  startFixtureServer,
+  SEARCH_TOKEN,
+  ARTICLE_COUNT,
+  UNDATED_LASTMOD,
+  type Fixture,
+} from './fixture-server.ts';
 import { makeWorkspace, type TempWorkspace } from './helpers.ts';
 import { runOnce } from '../src/ingest/run.ts';
 import { clearRobotsCache } from '../src/ingest/http.ts';
@@ -83,6 +89,22 @@ function sitemapSource(base: string) {
       kind: 'sitemap',
       url: `${base}/sitemap.xml`,
       include: ['/articles/'],
+      max_new_per_run: 25,
+    },
+  };
+}
+
+function undatedSitemapSource(base: string) {
+  return {
+    id: 'fixture-undated',
+    institution: 'Fixture AM',
+    name: 'Undated sitemap',
+    homepage: base,
+    static_tags: ['type:insight'],
+    adapter: {
+      kind: 'sitemap',
+      url: `${base}/sitemap-undated.xml`,
+      include: ['/undated/'],
       max_new_per_run: 25,
     },
   };
@@ -211,6 +233,26 @@ describe('sitemap adapter', () => {
     const items = storedItems();
     expect(items.map((i) => i.title)).toContain('The Inflation Path and What It Means for Rates');
     expect(items[0]?.summary).toBeTruthy();
+  });
+
+  it('marks a lastmod-derived date as estimated, so stale pages cannot pose as fresh', async () => {
+    use([undatedSitemapSource(fixture.base)]);
+    const [outcome] = await runOnce(true);
+    expect(outcome?.status).toBe('ok');
+
+    const [item] = storedItems();
+    // lastmod is still used for ordering...
+    expect(item?.published_at).toBe(Date.parse(UNDATED_LASTMOD));
+    // ...but it is a CMS rebuild timestamp, not a publication date.
+    expect(item?.date_estimated).toBe(1);
+  });
+
+  it('keeps a date the article states for itself as certain', async () => {
+    use([sitemapSource(fixture.base)]);
+    await runOnce(true);
+    const dated = storedItems();
+    expect(dated.length).toBeGreaterThan(0);
+    expect(dated.every((i) => i.date_estimated === 0)).toBe(true);
   });
 
   it('treats "nothing new" as healthy rather than broken', async () => {

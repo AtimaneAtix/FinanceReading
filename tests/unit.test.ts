@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { canonicalizeUrl, canonicalHash, titleKey, parseDate, toExcerpt } from '../src/ingest/canonical.ts';
+import { canonicalizeUrl, canonicalHash, titleKey, displayTitle, parseDate, toExcerpt } from '../src/ingest/canonical.ts';
 import { getPath, render } from '../src/ingest/adapters/json.ts';
 import { extractArticleMeta } from '../src/ingest/meta.ts';
 import { parseRobots, pathMatches, describeFetchFailure } from '../src/ingest/http.ts';
@@ -67,6 +67,45 @@ describe('titleKey', () => {
 
   it('does not collapse genuinely different titles', () => {
     expect(titleKey('Equity Outlook 2026')).not.toBe(titleKey('Equity Outlook 2027'));
+  });
+});
+
+describe('displayTitle', () => {
+  it('strips the publisher site name the sitemap appends', () => {
+    expect(displayTitle('Income restored | BlackRock', 'BlackRock')).toBe('Income restored');
+    expect(displayTitle('A Deep Dive on the Water | Morgan Stanley', 'Morgan Stanley')).toBe(
+      'A Deep Dive on the Water',
+    );
+  });
+
+  it('strips a longer house brand built on the institution name', () => {
+    expect(
+      displayTitle('Weekly commentary | BlackRock Investment Institute', 'BlackRock'),
+    ).toBe('Weekly commentary');
+  });
+
+  it('ignores punctuation differences in the institution name', () => {
+    expect(displayTitle('Mid-year outlook | JP Morgan', 'J.P. Morgan')).toBe('Mid-year outlook');
+  });
+
+  it('recognises the name an acronym institution stands for', () => {
+    expect(
+      displayTitle('Basel Committee publishes report | Bank for International Settlements', 'BIS'),
+    ).toBe('Basel Committee publishes report');
+    expect(displayTitle('Rate decision | European Central Bank', 'ECB')).toBe('Rate decision');
+  });
+
+  it('leaves a separator that belongs to the headline alone', () => {
+    expect(displayTitle('US CPI | what it means for duration', 'PIMCO')).toBe(
+      'US CPI | what it means for duration',
+    );
+    expect(displayTitle('Credit spreads — where the value is', 'PIMCO')).toBe(
+      'Credit spreads — where the value is',
+    );
+  });
+
+  it('never returns an empty title when the headline is only the site name', () => {
+    expect(displayTitle('BlackRock', 'BlackRock')).toBe('BlackRock');
   });
 });
 

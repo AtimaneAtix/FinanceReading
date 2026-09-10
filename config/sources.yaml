@@ -61,10 +61,22 @@ sources:
     homepage: https://www.bis.org
     static_tags: [type:research, scope:macro, region:global]
     adapter:
-      kind: rss
-      url: https://www.bis.org/doclist/all_rss.xml
+      # BIS publishes no feed, and its sitemap nests an index inside an index,
+      # which the adapter does not follow. This is the first leaf page, which
+      # holds the publications and media releases.
+      kind: sitemap
+      url: https://www.bis.org/default/sitemap.xml?page=1
+      include: ['/publ/', '/publications/', '/media-releases/']
+      exclude: ['/author/']
+      max_new_per_run: 25
 
+  # Disabled 2026-09-08. imf.org sits behind Akamai, which returns 403 to every
+  # plain HTTP request regardless of user agent -- the feed URL is not the
+  # problem, so no URL change revives this. Reaching it needs the browser
+  # adapter or a hunted endpoint:
+  #   npm run discover -- https://www.imf.org/en/Blogs
   - id: imf-blog
+    enabled: false
     institution: IMF
     name: Blog
     homepage: https://www.imf.org
@@ -142,7 +154,14 @@ sources:
     adapter:
       kind: sitemap
       url: https://www.blackrock.com/corporate/sitemap.xml
-      include: ['/insights/', '/investment-institute/']
+      include: ['/insights/blackrock-investment-institute/', '/insights/thought-leadership/']
+      # The section's own furniture: landing pages, media libraries and the
+      # corporate-policy tree, all of which match the include patterns but are
+      # not articles.
+      exclude:
+        - '/(events|videos|insights|outlook|publications|global-insights)$'
+        - '/(investment-stewardship|meet-the-bii-team)$'
+        - '/thought-leadership/public-policy/'
       max_new_per_run: 25
 
   - id: jpmam-insights
@@ -152,7 +171,11 @@ sources:
     static_tags: [type:insight]
     adapter:
       kind: sitemap
-      url: https://am.jpmorgan.com/sitemap.xml
+      # The root sitemap.xml is an empty stub. robots.txt points at a real
+      # index, but its 90 children are one per region+language and carry no
+      # lastmod, so the adapter cannot tell which are freshest. Naming the US
+      # institutional child directly avoids importing the Hong Kong Chinese site.
+      url: https://am.jpmorgan.com/us/en/asset-management/institutional/sitemap.xml
       include: ['/insights/']
       max_new_per_run: 25
 
@@ -163,8 +186,11 @@ sources:
     static_tags: [type:commentary]
     adapter:
       kind: sitemap
-      url: https://www.morningstar.com/sitemap.xml
-      include: ['/markets/', '/economy/', '/funds/']
+      # www.morningstar.com/sitemap.xml indexes stock, fund and ETF quote pages
+      # -- 5000 URLs, no articles. Editorial lives in the Arc outbound feed,
+      # whose children are dated newest-first.
+      url: https://media.morningstar.com/arc/outboundfeeds/sitemap/morningstar-all/
+      include: ['/markets/', '/economy/', '/funds/', '/personal-finance/']
       max_new_per_run: 25
 
   - id: bofa-institute
