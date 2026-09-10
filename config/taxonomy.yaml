@@ -37,9 +37,193 @@ facets:
       [monetary-policy, inflation, growth, recession, geopolitics, ai, energy,
        elections, banking, housing, labour, trade, esg, valuations]
 
-# Publisher category -> our tags. Fill this in from `npm run discover` output;
-# keys may be a human label or an opaque GUID, whichever the source emits.
-native_map: {}
+# Publisher category -> our tags. `npm run retag` prints the categories the
+# configured sources emit that nothing maps yet; this list is that output,
+# worked through.
+#
+# Keys match case-insensitively, so one entry covers both "Commodities" and
+# "commodities". Every value must be a tag declared in `facets` above -- the
+# worker refuses to start on one that is not, so a typo here fails loudly
+# rather than silently dropping a tag.
+#
+# Left unmapped on purpose:
+#   - Site furniture -- "Story", "Article", "Featured", "Latest", "Video" --
+#     which says where a piece sits in the CMS, not what it is about.
+#   - Labels that apply to nearly everything the source publishes, and so
+#     separate nothing: "Investing" and "Markets" on a market-insights hub,
+#     "Wealth Management" on a wealth manager.
+#   - Bank of America's opaque ids ("SPID377", "wfid24662252", "GCS0080") and
+#     its per-article keyword soup ("us population migration trends"), minted
+#     fresh for each article. That stream never converges on a vocabulary, so
+#     it is left to the keyword rules.
+#   - The retirement and wealth-planning stream JPMAM publishes heavily
+#     ("Defined Contribution", "College Savings", "Target Date Investing").
+#     It is real content with no facet to land in; it wants a `audience:` or
+#     `planning:` facet rather than a forced fit into asset class.
+native_map:
+  # --- format and series --------------------------------------------------
+  # A named series is a better type signal than any keyword: "Exchanges" is
+  # the Goldman Sachs podcast, whatever a given episode is about.
+  "Podcast": [type:podcast]
+  "Exchanges": [type:podcast]
+  "Talks at GS": [type:podcast]
+  "Research": [type:research]
+  "Goldman Sachs Research": [type:research]
+  "FEDS Notes": [type:research, scope:macro]
+  "Multi-Asset Solutions Research Report": [type:research, asset:multi-asset]
+  "Outlooks": [type:outlook]
+  "Economic outlook": [type:outlook, scope:macro]
+  "Global economic outlook": [type:outlook, scope:macro, region:global]
+  "Global investment outlook": [type:outlook, region:global]
+  "Economics Forecasting": [type:forecast, scope:macro]
+  "Insights": [type:insight]
+  "Institute insights": [type:insight]
+  "Thought leadership": [type:insight]
+  "Market Insights": [type:insight]
+  "Portfolio Insights": [type:insight]
+  "Asset Class Views": [type:insight]
+  "Top of Mind": [type:insight]
+  "Investment Banking Insights": [type:insight]
+  "Notes on the Week Ahead": [type:commentary]
+  "On the Minds of Investors": [type:commentary]
+  "Eye on the Market": [type:commentary]
+  "Economic Update": [type:commentary, scope:macro]
+  "The Markets": [type:commentary]
+  "Market Trends": [type:commentary]
+  "Bond Bulletin": [type:commentary, asset:fixed-income]
+  "Fixed Income Insights": [type:insight, asset:fixed-income]
+  "ETF Insights": [type:insight]
+
+  # --- central banks and policy -------------------------------------------
+  # The Fed's own release categories, which is why these are news rather than
+  # commentary: they announce an action, they do not argue a view.
+  "Enforcement Actions": [type:news, scope:micro, theme:banking]
+  "Orders on Banking Applications": [type:news, scope:micro, theme:banking]
+  "Banking and Consumer Regulatory Policy": [type:news, theme:banking]
+  "Policy Statements": [type:news]
+  "Monetary Policy": [scope:macro, theme:monetary-policy]
+  "Central Bank": [scope:macro, theme:monetary-policy]
+  "Federal Reserve": [scope:macro, theme:monetary-policy, region:us]
+  "Interest Rates": [scope:macro, theme:monetary-policy, asset:rates]
+  "Fiscal Policy": [scope:macro, theme:monetary-policy]
+  "Fiscal Stimulus": [scope:macro, theme:monetary-policy]
+  "Public Policy": [scope:macro]
+  "Policy": [scope:macro]
+  "Legislative and Regulatory": [scope:macro]
+  "Legislative and Regulatory Program": [scope:macro]
+
+  # --- macro --------------------------------------------------------------
+  "Economics": [scope:macro]
+  "Economy": [scope:macro]
+  "Macroeconomics": [scope:macro]
+  "Macroeconomic": [scope:macro]
+  "US economy": [scope:macro, region:us]
+  "Global economy": [scope:macro, region:global]
+  "GDP": [scope:macro, theme:growth]
+  "Growth": [scope:macro, theme:growth]
+  "Inflation": [scope:macro, theme:inflation]
+  "High inflation": [scope:macro, theme:inflation]
+  "Food inflation": [scope:macro, theme:inflation]
+  "Consumer prices": [scope:macro, theme:inflation]
+  "Food prices": [scope:macro, theme:inflation]
+  "Recession": [scope:macro, theme:recession]
+  "Employment": [scope:macro, theme:labour]
+  "Productivity": [scope:macro, theme:labour]
+  "Housing": [scope:macro, theme:housing]
+  "Consumer Spending": [scope:macro]
+  "Business Investment": [scope:macro]
+  "Trade": [scope:macro, theme:trade]
+  "Tariffs": [scope:macro, theme:trade]
+  "Liquidity": [scope:macro]
+  "Market Volatility": [scope:macro]
+  "Volatility": [scope:macro]
+  # A market-direction call is a statement about what things are worth.
+  "Bull Market": [theme:valuations]
+  "Bear Market": [theme:valuations]
+
+  # --- asset classes ------------------------------------------------------
+  "Equities": [asset:equities]
+  "Factor investing": [asset:equities]
+  "Fixed Income": [asset:fixed-income]
+  "Fixed income investing": [asset:fixed-income]
+  "Bonds": [asset:fixed-income]
+  "Income": [asset:fixed-income]
+  "Government Bonds": [asset:fixed-income, asset:rates]
+  "US Treasuries": [asset:fixed-income, asset:rates, region:us]
+  "Rates": [asset:rates]
+  "Credit": [asset:credit]
+  "Corporate Credit": [asset:credit]
+  "Investment Grade": [asset:credit, asset:fixed-income]
+  "Private credit": [asset:credit, asset:private-markets]
+  "Asset Based Finance": [asset:credit, asset:private-markets]
+  "Commodities": [asset:commodities]
+  "Oil": [asset:commodities, theme:energy]
+  "Real estate": [asset:real-estate]
+  "Real Asset": [asset:real-estate, asset:commodities]
+  "Private equity": [asset:private-markets]
+  "Alternatives": [asset:private-markets]
+  "Alternatives & Private Markets": [asset:private-markets]
+  "Hedge funds": [asset:private-markets]
+  "Venture Capital": [asset:private-markets, scope:micro]
+  "Multi-Asset Solutions": [asset:multi-asset]
+  "Asset Allocation": [asset:multi-asset]
+  "Crypto": [asset:crypto]
+  "Cryptocurrency": [asset:crypto]
+  "Bitcoin": [asset:crypto]
+  "Pension/LDI": [asset:fixed-income]
+
+  # --- regions ------------------------------------------------------------
+  "United States": [region:us]
+  "US": [region:us]
+  "Europe": [region:europe]
+  "Japan": [region:japan]
+  "China": [region:china]
+  "India": [region:em]
+  "India economy": [region:em, scope:macro]
+  "Global": [region:global]
+
+  # --- themes -------------------------------------------------------------
+  "Artificial Intelligence": [theme:ai]
+  "Artificial Intelligence (AI)": [theme:ai]
+  "AI-enabled autonomy": [theme:ai]
+  "Energy": [theme:energy]
+  "Mass energy storage": [theme:energy]
+  "Geopolitics": [theme:geopolitics]
+  "National Security": [theme:geopolitics]
+  "Sovereign defense capability": [theme:geopolitics]
+  "Defense modernization": [theme:geopolitics]
+  "Elections": [scope:macro, theme:elections]
+  "U.S. Elections": [scope:macro, theme:elections, region:us]
+  "ESG": [theme:esg]
+  "Sustainability": [theme:esg]
+  "Sustainable investing": [theme:esg]
+  "Sustainability trends": [theme:esg]
+  "Sustainability insights": [theme:esg]
+  "Environment": [theme:esg]
+
+  # --- company and sector level -------------------------------------------
+  # Single-company and single-sector work: the micro half of the scope facet,
+  # which keyword rules rarely catch because the text names the company
+  # rather than saying "micro".
+  "Earnings": [scope:micro]
+  "Mergers and Acquisitions": [scope:micro]
+  "Initial Public Offerings": [scope:micro]
+  "Technology": [scope:micro]
+  "Software": [scope:micro]
+  "Cybersecurity Software": [scope:micro]
+  "Aerospace and Defense": [scope:micro, theme:geopolitics]
+  "Defense Technology": [scope:micro, theme:geopolitics]
+  "Space Economy": [scope:micro]
+  "Satellite communications": [scope:micro]
+  "Consumer": [scope:micro]
+  "Food and Beverage": [scope:micro]
+  "Transportation": [scope:micro]
+  "Infrastructure": [scope:micro]
+  "Health and Wellness": [scope:micro]
+  "Obesity drugs": [scope:micro]
+  "Anti-obesity drugs": [scope:micro]
+  "Weight loss drugs": [scope:micro]
+  "Founders": [scope:micro]
 
 rules:
   # --- type ---------------------------------------------------------------
