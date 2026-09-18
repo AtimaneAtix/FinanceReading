@@ -49,8 +49,13 @@ interface Clause {
   params: unknown[];
 }
 
+/** '' for a tag carrying no facet prefix, which callers drop. */
 function facetOf(tag: string): string {
-  return tag.slice(0, tag.indexOf(':'));
+  const colon = tag.indexOf(':');
+  // Not `slice(0, -1)` by accident: a colonless tag would otherwise yield the
+  // tag minus its last character and be filtered on as though it were a real
+  // facet, so `?tags=nonsense` returned an empty panel instead of being ignored.
+  return colon < 0 ? '' : tag.slice(0, colon);
 }
 
 /**

@@ -9,8 +9,12 @@
  */
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
+import { gzipSync } from 'node:zlib';
 
 export const SEARCH_TOKEN = 'tok_live_9f3c2a';
+
+/** The ETag the fixture's RSS feed serves. */
+export const RSS_ETAG = '"rss-v1"';
 
 /** Tests assert against this rather than a hardcoded number. */
 export const ARTICLE_COUNT = 6;
@@ -241,12 +245,24 @@ export async function startFixtureServer(): Promise<Fixture> {
       res.end(body);
     };
 
+    // Served as raw bytes with no Content-Encoding, which is what a real
+    // .xml.gz sitemap is: a compressed body, not a compressed transfer.
+    const sendGzip = (body: string): void => {
+      const gz = gzipSync(Buffer.from(body, 'utf8'));
+      res.writeHead(200, { 'content-type': 'application/gzip', 'content-length': gz.length });
+      res.end(gz);
+    };
+
     if (url.pathname === '/robots.txt') {
       return send(200, 'text/plain', `User-agent: *\nDisallow: /private/\nSitemap: ${base}/sitemap.xml\n`);
     }
     if (url.pathname === '/insights') return send(200, 'text/html', listingHtml(base));
     if (url.pathname === '/static-insights') return send(200, 'text/html', staticListingHtml(base));
-    if (url.pathname === '/rss.xml') return send(200, 'application/rss+xml', rssXml(base));
+    if (url.pathname === '/rss.xml') {
+      // A validator to make sure it is never attributed to another URL.
+      res.setHeader('etag', RSS_ETAG);
+      return send(200, 'application/rss+xml', rssXml(base));
+    }
     if (url.pathname === '/feeds/corpus.json') return send(200, 'application/json', corpusJson());
     if (url.pathname === '/sitemap-undated-many.xml') {
       return send(200, 'application/xml', sitemapUndatedMany(base));
@@ -278,6 +294,7 @@ export async function startFixtureServer(): Promise<Fixture> {
       );
     }
 
+    if (url.pathname === '/sitemap-articles.xml.gz') return sendGzip(sitemapArticles(base));
     if (url.pathname === '/sitemap.xml') return send(200, 'application/xml', sitemapIndex(base));
     if (url.pathname === '/sitemap-articles.xml') return send(200, 'application/xml', sitemapArticles(base));
     if (url.pathname === '/sitemap-legal.xml') {

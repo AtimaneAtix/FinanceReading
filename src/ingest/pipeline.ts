@@ -178,6 +178,7 @@ export async function ingestSource(
 
   const chain = [config.adapter, ...config.fallback];
   let result: AdapterResult | null = null;
+  let resultIsFallback = false;
   const errors: string[] = [];
 
   for (const [index, adapter] of chain.entries()) {
@@ -197,10 +198,12 @@ export async function ingestSource(
 
       if (attempt.notModified || attempt.items.length > 0 || attempt.healthyEmpty) {
         result = attempt;
+        resultIsFallback = isFallback;
         break;
       }
       errors.push(`${adapter.kind}: returned no items`);
       result = attempt;
+      resultIsFallback = isFallback;
     } catch (err) {
       const message = err instanceof AdapterError ? err.message : (err as Error).message;
       errors.push(`${adapter.kind}: ${message}`);
@@ -252,8 +255,12 @@ export async function ingestSource(
     status: 'ok',
     error: null,
     itemCount: items.length,
-    etag: result.etag ?? null,
-    lastModified: result.lastModified ?? null,
+    // The stored validators are replayed to the *primary* adapter on the next
+    // run, so a fallback's must never be kept: they describe a different URL,
+    // and `recordFetch` coalesces rather than clears, so one wrong ETag would
+    // outlive every later run.
+    etag: resultIsFallback ? null : result.etag ?? null,
+    lastModified: resultIsFallback ? null : result.lastModified ?? null,
   });
   return outcome;
 }

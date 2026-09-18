@@ -17,15 +17,26 @@ interface SitemapEntry {
   lastmod: string | null;
 }
 
+/** The two bytes every gzip stream starts with. */
+function isGzip(bytes: Buffer): boolean {
+  return bytes.length > 2 && bytes[0] === 0x1f && bytes[1] === 0x8b;
+}
+
 async function fetchSitemapXml(url: string): Promise<string> {
+  // Fetched as bytes because a .gz sitemap is a compressed *body*, not a
+  // compressed transfer: fetch does not unwrap it, and reading it as text
+  // mangles it beyond recovery -- every byte that is not valid UTF-8 becomes a
+  // replacement character, and gunzip then rejects its own header.
   const res = await throttled(url, () =>
-    httpFetch(url, { accept: 'application/xml, text/xml, */*;q=0.5' }),
+    httpFetch(url, { accept: 'application/xml, text/xml, */*;q=0.5', binary: true }),
   );
   if (!res.ok) throw new AdapterError(`HTTP ${res.status} from ${url}`);
-  // .gz sitemaps arrive as bytes that Content-Encoding did not unwrap.
-  if (url.endsWith('.gz')) {
+  // Sniffed rather than taken from the extension: a server may gzip a plain
+  // .xml URL, and it may equally serve a .gz path that Content-Encoding has
+  // already unwrapped by the time it reaches us.
+  if (res.bytes && isGzip(res.bytes)) {
     try {
-      return gunzipSync(Buffer.from(res.body, 'binary')).toString('utf8');
+      return gunzipSync(res.bytes).toString('utf8');
     } catch {
       throw new AdapterError(`Could not decompress gzipped sitemap ${url}`, false);
     }

@@ -83,6 +83,8 @@ export interface HttpResponse {
   ok: boolean;
   notModified: boolean;
   body: string;
+  /** The response's raw bytes, present only when `binary` was requested. */
+  bytes: Buffer | null;
   etag: string | null;
   lastModified: string | null;
   finalUrl: string;
@@ -97,6 +99,12 @@ export interface HttpOptions {
   etag?: string | null;
   lastModified?: string | null;
   accept?: string;
+  /**
+   * Return the raw bytes as well as the text. Compressed payloads need this:
+   * decoding them as UTF-8 and re-encoding replaces every byte that is not
+   * valid UTF-8 with a question mark, which is not reversible.
+   */
+  binary?: boolean;
 }
 
 export async function httpFetch(url: string, opts: HttpOptions = {}): Promise<HttpResponse> {
@@ -129,13 +137,22 @@ export async function httpFetch(url: string, opts: HttpOptions = {}): Promise<Ht
     throw new Error(`${describeFetchFailure(err)} (${url})`, { cause: err });
   }
   // 304 carries no body, and reading one would just block until timeout.
-  const body = res.status === 304 ? '' : await res.text();
+  const empty = res.status === 304;
+  let body = '';
+  let bytes: Buffer | null = null;
+  if (!empty && opts.binary) {
+    bytes = Buffer.from(await res.arrayBuffer());
+    body = bytes.toString('utf8');
+  } else if (!empty) {
+    body = await res.text();
+  }
 
   return {
     status: res.status,
     ok: res.ok,
-    notModified: res.status === 304,
+    notModified: empty,
     body,
+    bytes,
     etag: res.headers.get('etag'),
     lastModified: res.headers.get('last-modified'),
     finalUrl: res.url || url,

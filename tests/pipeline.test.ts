@@ -5,6 +5,7 @@ import {
   ARTICLE_COUNT,
   UNDATED_LASTMOD,
   UNDATED_COUNT,
+  RSS_ETAG,
   type Fixture,
 } from './fixture-server.ts';
 import { makeWorkspace, type TempWorkspace } from './helpers.ts';
@@ -93,6 +94,22 @@ function sitemapSource(base: string) {
     adapter: {
       kind: 'sitemap',
       url: `${base}/sitemap.xml`,
+      include: ['/articles/'],
+      max_new_per_run: 25,
+    },
+  };
+}
+
+function gzippedSitemapSource(base: string) {
+  return {
+    id: 'fixture-sitemap-gz',
+    institution: 'Fixture AM',
+    name: 'Gzipped sitemap',
+    homepage: base,
+    static_tags: ['type:insight'],
+    adapter: {
+      kind: 'sitemap',
+      url: `${base}/sitemap-articles.xml.gz`,
       include: ['/articles/'],
       max_new_per_run: 25,
     },
@@ -390,6 +407,18 @@ describe('sitemap adapter', () => {
     expect(dated.every((i) => i.date_estimated === 0)).toBe(true);
   });
 
+  it('reads a gzipped sitemap', async () => {
+    // Decoding the compressed body as text and re-encoding it replaces every
+    // byte that is not valid UTF-8, so the stream no longer has a gzip header
+    // and every .gz sitemap failed to decompress.
+    use([gzippedSitemapSource(fixture.base)]);
+    const [outcome] = await runOnce(true);
+
+    expect(outcome?.error).toBeNull();
+    expect(outcome?.status).toBe('ok');
+    expect(outcome?.stats.inserted).toBe(ARTICLE_COUNT);
+  });
+
   it('treats "nothing new" as healthy rather than broken', async () => {
     use([sitemapSource(fixture.base)]);
     await runOnce(true);
@@ -441,6 +470,43 @@ describe('fallback chain', () => {
     const [outcome] = await runOnce(true);
     expect(outcome?.status).toBe('ok');
     expect(outcome?.stats.inserted).toBe(ARTICLE_COUNT);
+  });
+
+  it('does not keep a fallback\u2019s ETag, which belongs to a different URL', async () => {
+    use([
+      {
+        id: 'fixture-fallback-etag',
+        institution: 'Fixture AM',
+        name: 'Primary with fallback',
+        homepage: fixture.base,
+        static_tags: ['type:insight'],
+        adapter: { kind: 'rss', url: `${fixture.base}/does-not-exist.xml` },
+        fallback: [{ kind: 'rss', url: `${fixture.base}/rss.xml` }],
+      },
+    ]);
+    const [outcome] = await runOnce(true);
+    expect(outcome?.status).toBe('ok');
+
+    // Stored validators are replayed to the *primary* adapter next run, and
+    // recordFetch coalesces rather than clears, so a fallback's ETag would ask
+    // one URL whether another had changed -- for every run thereafter.
+    const db = openDb();
+    const row = db.prepare('SELECT etag, last_modified FROM sources WHERE id = ?')
+      .get('fixture-fallback-etag') as { etag: string | null; last_modified: string | null };
+    db.close();
+    expect(row.etag).toBeNull();
+    expect(row.last_modified).toBeNull();
+  });
+
+  it('keeps the primary adapter\u2019s own ETag', async () => {
+    use([rssSource(fixture.base)]);
+    await runOnce(true);
+
+    const db = openDb();
+    const row = db.prepare('SELECT etag FROM sources WHERE id = ?').get('fixture-rss') as
+      { etag: string | null };
+    db.close();
+    expect(row.etag).toBe(RSS_ETAG);
   });
 
   it('records a genuine failure with a usable message', async () => {
@@ -566,6 +632,17 @@ describe('the panel API', () => {
     const other = await p.get('/api/items?since=all&institution=Nobody');
     expect(mine.total).toBe(ARTICLE_COUNT);
     expect(other.total).toBe(0);
+    await p.close();
+  });
+
+  it('ignores a tag that carries no facet instead of filtering on it', async () => {
+    const p = await panel();
+    // A tag is "facet:value"; anything else came from a hand-edited URL and
+    // cannot match, so it must not narrow the panel to nothing.
+    const junk = await p.get('/api/items?since=all&tags=nonsense');
+    const real = await p.get('/api/items?since=all&tags=type:insight');
+    expect(junk.total).toBe(ARTICLE_COUNT);
+    expect(real.total).toBe(ARTICLE_COUNT);
     await p.close();
   });
 

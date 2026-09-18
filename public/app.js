@@ -69,9 +69,18 @@ function queryString(cursor) {
 
 // --- data -------------------------------------------------------------
 
+// Every request carries a generation. A filter change has to win over whatever
+// is already in flight -- refusing it while a page loads leaves the panel
+// showing articles that do not match the filters it is displaying, and only a
+// reload puts that right -- so a reset supersedes, and the older response is
+// dropped when it lands rather than rendered on top of the new one.
+let generation = 0;
+
 async function loadPage({ reset = false } = {}) {
-  if (state.loading) return;
+  // Appending the next page can wait its turn; changing the filters cannot.
+  if (state.loading && !reset) return;
   if (!reset && state.exhausted) return;
+  const mine = ++generation;
   state.loading = true;
 
   if (reset) {
@@ -88,22 +97,43 @@ async function loadPage({ reset = false } = {}) {
 
   try {
     const res = await fetch(`/api/items?${queryString(state.cursor)}`);
+    if (mine !== generation) return;
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
+    if (mine !== generation) return;
     loader.remove();
 
     for (const item of data.items) el.items.append(renderItem(item));
     state.cursor = data.nextCursor;
     state.exhausted = data.nextCursor === null;
 
-    renderFacets(data.facets);
+    // The counts only move when the filters do; rebuilding the sidebar on every
+    // appended page would reshuffle it under the reader's pointer as they scroll.
+    if (reset) renderFacets(data.facets);
     renderSummary(data.total);
     if (data.total === 0) showEmpty();
   } catch (err) {
+    if (mine !== generation) return;
     loader.className = 'loading';
     loader.textContent = `Could not load articles: ${err.message}`;
+    return;
   } finally {
-    state.loading = false;
+    if (mine === generation) state.loading = false;
+  }
+  // Only after a page that actually arrived: retrying straight into a failed
+  // request would spin.
+  fillViewport();
+}
+
+/**
+ * A load that finishes with the sentinel still on screen gets no fresh
+ * intersection event, so the list would sit there half-empty until the reader
+ * happened to scroll. Each page pushes the sentinel down, so this settles.
+ */
+function fillViewport() {
+  if (state.loading || state.exhausted) return;
+  if (el.sentinel.getBoundingClientRect().top < window.innerHeight + 400) {
+    void loadPage();
   }
 }
 

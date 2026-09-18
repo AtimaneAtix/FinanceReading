@@ -90,10 +90,16 @@ async function main(): Promise<void> {
 
   console.log(`Worker started. Checking for due sources every ${TICK_MS / 1000}s.`);
   let stopping = false;
+  // Handing the sleep its own resolver is what makes the signal handlers mean
+  // what they say: the wait between passes is a whole minute, and registering
+  // a handler suppresses Node's own exit, so without this a Ctrl-C lands on a
+  // worker that ignores it until the timer runs out.
+  let wake: (() => void) | null = null;
   for (const signal of ['SIGINT', 'SIGTERM'] as const) {
     process.on(signal, () => {
       console.log(`\n${signal} received, finishing the current pass…`);
       stopping = true;
+      wake?.();
     });
   }
 
@@ -108,7 +114,14 @@ async function main(): Promise<void> {
       console.error(`Pass failed: ${(err as Error).message}`);
     }
     if (stopping) break;
-    await new Promise((r) => setTimeout(r, TICK_MS));
+    await new Promise<void>((resolve) => {
+      const timer = setTimeout(resolve, TICK_MS);
+      wake = () => {
+        clearTimeout(timer);
+        resolve();
+      };
+    });
+    wake = null;
   }
   console.log('Worker stopped.');
 }
