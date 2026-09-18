@@ -61,3 +61,14 @@ CREATE TABLE IF NOT EXISTS seen_urls (
   seen_at        INTEGER NOT NULL,
   PRIMARY KEY (source_id, canonical_hash)
 ) WITHOUT ROWID;
+
+-- URLs deliberately removed by `npm run prune`, remembered so they cannot
+-- come straight back. A feed's window reaches much further back than its
+-- length suggests -- CBRT's publications feed still lists items from 2023 --
+-- and rss/json sources judge novelty against the items table alone, so a
+-- pruned article still inside its window would be re-fetched on the next run
+-- and pruned again on the next pass, forever.
+CREATE TABLE IF NOT EXISTS pruned_urls (
+  canonical_hash TEXT PRIMARY KEY,
+  pruned_at      INTEGER NOT NULL
+) WITHOUT ROWID;

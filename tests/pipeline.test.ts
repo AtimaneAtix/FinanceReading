@@ -11,7 +11,7 @@ import {
 import { makeWorkspace, type TempWorkspace } from './helpers.ts';
 import { runOnce } from '../src/ingest/run.ts';
 import { clearRobotsCache } from '../src/ingest/http.ts';
-import { openDb } from '../src/db/index.ts';
+import { openDb, pruneOlderThan, prunePreview, sweepOrphanTags } from '../src/db/index.ts';
 import { loadTaxonomy } from '../src/config.ts';
 import { buildServer } from '../src/server/index.ts';
 
@@ -529,6 +529,74 @@ describe('fallback chain', () => {
     db.close();
     expect(row.last_status).toBe('error');
     expect(row.consecutive_failures).toBe(1);
+  });
+});
+
+describe('pruning', () => {
+  it('does not let a feed re-offer what was pruned', async () => {
+    // The whole reason tombstones exist. A feed's window reaches back much
+    // further than its length suggests -- CBRT's publications feed still lists
+    // items from 2023 -- and rss sources judge novelty against the items table
+    // alone. Without a tombstone the pruned article returns on the very next
+    // run and is pruned again on the next pass, for ever.
+    use([rssSource(fixture.base)]);
+    await runOnce(true);
+    const before = storedItems().length;
+    expect(before).toBe(ARTICLE_COUNT);
+
+    const db = openDb();
+    // Everything, so the fixture feed still lists every one of them.
+    const result = pruneOlderThan(db, Date.now());
+    db.close();
+    expect(result.deleted).toBe(ARTICLE_COUNT);
+    expect(storedItems()).toHaveLength(0);
+
+    // The feed has not changed, and offers the same articles again.
+    const [outcome] = await runOnce(true);
+    expect(outcome?.status).toBe('ok');
+    expect(outcome?.stats.inserted).toBe(0);
+    expect(storedItems()).toHaveLength(0);
+  });
+
+  it('keeps what is inside the window and drops what is outside it', async () => {
+    use([rssSource(fixture.base)]);
+    await runOnce(true);
+
+    const db = openDb();
+    const cutoff = Date.now() - 365 * 86_400_000;
+    const preview = prunePreview(db, cutoff);
+    const result = pruneOlderThan(db, cutoff);
+    db.close();
+
+    // The fixture's articles are all recent, so a year-old cut takes none.
+    expect(preview.total).toBe(0);
+    expect(result.deleted).toBe(0);
+    expect(storedItems()).toHaveLength(ARTICLE_COUNT);
+  });
+
+  it('sweeps tag rows whose article was deleted without the cascade', async () => {
+    use([rssSource(fixture.base)]);
+    await runOnce(true);
+
+    const db = openDb();
+    // Exactly what a sqlite3 session does: the pragma is per-connection and
+    // the CLI leaves it off, so the tags are left behind.
+    db.pragma('foreign_keys = OFF');
+    const victim = db.prepare('SELECT id FROM items LIMIT 1').get() as { id: number };
+    db.prepare('DELETE FROM items WHERE id = ?').run(victim.id);
+    db.pragma('foreign_keys = ON');
+
+    const orphaned = db
+      .prepare('SELECT COUNT(*) AS n FROM item_tags WHERE item_id NOT IN (SELECT id FROM items)')
+      .get() as { n: number };
+    expect(orphaned.n).toBeGreaterThan(0);
+
+    expect(sweepOrphanTags(db)).toBe(orphaned.n);
+    const left = db
+      .prepare('SELECT COUNT(*) AS n FROM item_tags WHERE item_id NOT IN (SELECT id FROM items)')
+      .get() as { n: number };
+    db.close();
+    expect(left.n).toBe(0);
   });
 });
 

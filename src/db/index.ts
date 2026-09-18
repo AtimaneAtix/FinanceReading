@@ -5,7 +5,7 @@ import { ROOT, type SourceConfig } from '../config.ts';
 
 export type DB = Database.Database;
 
-const SCHEMA_VERSION = 1;
+const SCHEMA_VERSION = 2;
 
 export function openDb(path = process.env.DB_PATH ?? resolve(ROOT, 'data/feeds.db')): DB {
   mkdirSync(dirname(path), { recursive: true });
@@ -31,7 +31,14 @@ function migrate(db: DB): void {
         'Use a newer build, or remove data/feeds.db to start over.',
     );
   }
-  // Future migrations land here, guarded by `current < n`.
+  if (current < 2) {
+    // Replaying schema.sql adds the tables an older database is missing and
+    // leaves the rest alone, because every statement in it is IF NOT EXISTS.
+    // That covers a migration that only adds tables; one that alters an
+    // existing table needs its own explicit step here.
+    db.exec(readFileSync(resolve(ROOT, 'src/db/schema.sql'), 'utf8'));
+    db.pragma('user_version = 2');
+  }
 }
 
 // --- sources ---------------------------------------------------------------
@@ -181,7 +188,13 @@ export interface InsertStats {
 export function insertItems(db: DB, items: NewItem[]): InsertStats {
   const stats: InsertStats = { inserted: 0, duplicateUrl: 0, duplicateTitle: 0 };
 
-  const byHash = db.prepare('SELECT id FROM items WHERE canonical_hash = ?');
+  // Both tables, so an article that was deliberately pruned cannot be
+  // re-inserted by a feed that still lists it.
+  const byHash = db.prepare(
+    `SELECT 1 FROM items WHERE canonical_hash = ?
+      UNION ALL
+     SELECT 1 FROM pruned_urls WHERE canonical_hash = ? LIMIT 1`,
+  );
   const byTitle = db.prepare(
     `SELECT id FROM items
       WHERE institution = ? AND title_key = ?
@@ -200,7 +213,7 @@ export function insertItems(db: DB, items: NewItem[]): InsertStats {
 
   db.transaction(() => {
     for (const it of items) {
-      if (byHash.get(it.canonicalHash)) {
+      if (byHash.get(it.canonicalHash, it.canonicalHash)) {
         stats.duplicateUrl++;
         continue;
       }
@@ -234,6 +247,104 @@ export function insertItems(db: DB, items: NewItem[]): InsertStats {
   return stats;
 }
 
+// --- pruning ---------------------------------------------------------------
+
+export interface PrunePreview {
+  total: number;
+  keeping: number;
+  byInstitution: { institution: string; count: number }[];
+  /** Tag rows whose article is already gone; see `sweepOrphanTags`. */
+  orphanTags: number;
+}
+
+/** What a cut at `cutoff` would remove, without removing it. */
+export function prunePreview(db: DB, cutoff: number): PrunePreview {
+  const total = (db.prepare('SELECT COUNT(*) AS n FROM items WHERE published_at < ?')
+    .get(cutoff) as { n: number }).n;
+  const keeping = (db.prepare('SELECT COUNT(*) AS n FROM items WHERE published_at >= ?')
+    .get(cutoff) as { n: number }).n;
+  const byInstitution = db
+    .prepare(
+      `SELECT institution, COUNT(*) AS count FROM items
+        WHERE published_at < ? GROUP BY institution ORDER BY count DESC, institution ASC`,
+    )
+    .all(cutoff) as { institution: string; count: number }[];
+  return { total, keeping, byInstitution, orphanTags: countOrphanTags(db) };
+}
+
+function countOrphanTags(db: DB): number {
+  return (db.prepare(
+    'SELECT COUNT(*) AS n FROM item_tags WHERE item_id NOT IN (SELECT id FROM items)',
+  ).get() as { n: number }).n;
+}
+
+/**
+ * Removes tag rows whose article is no longer there.
+ *
+ * ON DELETE CASCADE handles this whenever an article is deleted through the
+ * app, because `openDb` turns foreign keys on. A deletion from a sqlite3
+ * session does not: the pragma is per-connection and the CLI leaves it off, so
+ * the tags stay behind. They are invisible either way -- every query reaches
+ * item_tags through a join on items -- which is exactly why they accumulate
+ * unnoticed.
+ */
+export function sweepOrphanTags(db: DB): number {
+  return db
+    .prepare('DELETE FROM item_tags WHERE item_id NOT IN (SELECT id FROM items)')
+    .run().changes;
+}
+
+export interface PruneResult {
+  deleted: number;
+  tags: number;
+  orphanTags: number;
+  bytesFreed: number;
+}
+
+/**
+ * Deletes every article published before `cutoff`, and remembers their URLs.
+ *
+ * The remembering is the part that makes this work at all. A feed's window
+ * reaches back much further than its length suggests, and rss and json sources
+ * judge novelty against the items table alone -- so without a tombstone a
+ * pruned article that is still listed comes back on the very next run, is
+ * pruned again on the next pass, and churns forever.
+ */
+export function pruneOlderThan(db: DB, cutoff: number): PruneResult {
+  const sizeBefore = pageBytes(db);
+  let deleted = 0;
+  let tags = 0;
+  let orphanTags = 0;
+
+  db.transaction(() => {
+    tags = (db.prepare(
+      `SELECT COUNT(*) AS n FROM item_tags
+        WHERE item_id IN (SELECT id FROM items WHERE published_at < ?)`,
+    ).get(cutoff) as { n: number }).n;
+
+    // Tombstones first: once the rows are gone their hashes are gone too.
+    db.prepare(
+      `INSERT OR IGNORE INTO pruned_urls (canonical_hash, pruned_at)
+       SELECT canonical_hash, ? FROM items WHERE published_at < ?`,
+    ).run(Date.now(), cutoff);
+
+    // item_tags follows by ON DELETE CASCADE, which openDb enables.
+    deleted = db.prepare('DELETE FROM items WHERE published_at < ?').run(cutoff).changes;
+    orphanTags = sweepOrphanTags(db);
+  })();
+
+  // Outside the transaction, because VACUUM cannot run inside one -- and only
+  // when something went, since it rewrites the whole file.
+  if (deleted > 0 || orphanTags > 0) db.exec('VACUUM');
+  return { deleted, tags, orphanTags, bytesFreed: Math.max(0, sizeBefore - pageBytes(db)) };
+}
+
+function pageBytes(db: DB): number {
+  const pages = db.pragma('page_count', { simple: true }) as number;
+  const size = db.pragma('page_size', { simple: true }) as number;
+  return pages * size;
+}
+
 export function markUrlsSeen(db: DB, sourceId: string, hashes: string[]): void {
   const stmt = db.prepare(
     'INSERT OR IGNORE INTO seen_urls (source_id, canonical_hash, seen_at) VALUES (?, ?, ?)',
@@ -244,11 +355,19 @@ export function markUrlsSeen(db: DB, sourceId: string, hashes: string[]): void {
   })();
 }
 
-/** Which of these canonical hashes are already stored, from any source. */
+/**
+ * Which of these canonical hashes are already stored, from any source, or were
+ * pruned on purpose. Both count as known: the per-run ration should be spent on
+ * articles that can actually land, and a pruned one never can.
+ */
 export function knownHashes(db: DB, hashes: string[]): Set<string> {
-  const stmt = db.prepare('SELECT 1 FROM items WHERE canonical_hash = ?');
+  const stmt = db.prepare(
+    `SELECT 1 FROM items WHERE canonical_hash = ?
+      UNION ALL
+     SELECT 1 FROM pruned_urls WHERE canonical_hash = ? LIMIT 1`,
+  );
   const out = new Set<string>();
-  for (const h of hashes) if (stmt.get(h)) out.add(h);
+  for (const h of hashes) if (stmt.get(h, h)) out.add(h);
   return out;
 }
 

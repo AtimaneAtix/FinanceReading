@@ -245,9 +245,44 @@ Expect to tune this in the first week. That command makes tuning free.
 | `npm run doctor` | Fetch every source now; print what worked and why the rest did not. |
 | `npm run discover -- <url>` | Hunt the article source behind a listing page. |
 | `npm run retag` | Re-apply the taxonomy to stored articles. |
+| `npm run prune` | Show what a 365-day cut would remove. Add `--apply` to do it. |
 | `npm run ingest:once` | One ingestion pass, then exit. |
 | `npm test` | Unit and integration tests, including a fixture of each adapter. |
 | `npm run typecheck` | TypeScript, no emit. |
+
+---
+
+## Storage, and pruning
+
+One file grows as this runs: `data/feeds.db`. Everything else is incidental —
+`config/discovered/*.json` appears only when you run `discover`, and the app
+writes no logs.
+
+Growth is slower than it looks. The panel takes on the order of **ten
+publisher-dated articles a day**, weekday-heavy, and an article costs about
+1.1 KB with its tags and index entries — so the database puts on roughly **4 MB
+a year** and would need a decade or two to become inconvenient. Size is not a
+reason to prune.
+
+Ageing the reading list is. `npm run prune` shows what a cut would remove and
+deletes nothing; `--apply` goes ahead, and `--older-than=180d` moves the line:
+
+```bash
+npm run prune                                # what a 365-day cut would take
+npm run prune -- --older-than=180d --apply
+```
+
+**Pruning remembers what it removed**, in `pruned_urls`, and that is not
+incidental. A feed's window reaches much further back than its length suggests
+— CBRT's publications feed still lists items from 2023, the New York Fed's
+reaches back a year — and the `rss` and `json` adapters judge novelty against
+the items table alone. Delete an article that is still inside its feed's window
+without a tombstone and it returns on the very next run, to be deleted again on
+the next pass, for ever. Only the `sitemap` adapter is naturally immune,
+because `seen_urls` already remembers for it.
+
+That permanence is also why a cut under 30 days needs `--force`: a pruned
+article is not coming back.
 
 ---
 
