@@ -63,14 +63,26 @@ function main(): void {
     const cutoffDate = new Date(cutoff).toISOString().slice(0, 10);
 
     if (preview.total === 0) {
-      console.log(`Nothing published before ${cutoffDate}; ${preview.keeping} article(s) kept.`);
+      console.log(`Nothing is older than ${cutoffDate}; ${preview.keeping} article(s) kept.`);
       // Orphaned tags are still worth clearing on a run that prunes nothing.
       if (preview.orphanTags === 0) return;
     } else {
       console.log(
-        `${apply ? 'Removing' : 'Would remove'} ${preview.total} article(s) published before ` +
-          `${cutoffDate}, keeping ${preview.keeping}.\n`,
+        `${apply ? 'Removing' : 'Would remove'} ${preview.total} article(s) older than ` +
+          `${days} days, keeping ${preview.keeping}.`,
       );
+      // Two different facts, and saying so is the point: one group carries a
+      // date its publisher stated, the other is judged on how long it has been
+      // in the list because its date was only ever a guess.
+      console.log(
+        `  ${preview.stated} published before ${cutoffDate} by the publisher's own date`,
+      );
+      if (preview.estimated > 0) {
+        console.log(
+          `  ${preview.estimated} with an estimated date, in the list since before ${cutoffDate}`,
+        );
+      }
+      console.log();
       const width = Math.max(...preview.byInstitution.map((r) => r.institution.length));
       for (const row of preview.byInstitution) {
         console.log(`  ${row.institution.padEnd(width)}  ${String(row.count).padStart(5)}`);

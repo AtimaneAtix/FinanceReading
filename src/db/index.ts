@@ -249,8 +249,32 @@ export function insertItems(db: DB, items: NewItem[]): InsertStats {
 
 // --- pruning ---------------------------------------------------------------
 
+/**
+ * What "older than the cutoff" means, per article.
+ *
+ * `published_at` carries two different kinds of fact. When the publisher stated
+ * a date it is a publication date and can be judged directly. When
+ * `date_estimated` is set it is a guess -- a sitemap `lastmod`, which tracks
+ * CMS rebuilds rather than publication, or simply the moment of first sight
+ * when nothing parsed at all -- and deleting on a guess is not something to do
+ * quietly.
+ *
+ * So an estimated article is judged on the one date that is not in doubt:
+ * how long it has been in your list. It goes a year after it arrived, rather
+ * than a year after a timestamp nobody vouched for.
+ */
+const OLDER_THAN = `(
+  (items.date_estimated = 0 AND items.published_at < ?)
+  OR
+  (items.date_estimated = 1 AND items.first_seen_at < ?)
+)`;
+
 export interface PrunePreview {
   total: number;
+  /** Of `total`, those judged on a date the publisher stated. */
+  stated: number;
+  /** Of `total`, those judged on how long they have been in the list. */
+  estimated: number;
   keeping: number;
   byInstitution: { institution: string; count: number }[];
   /** Tag rows whose article is already gone; see `sweepOrphanTags`. */
@@ -259,17 +283,27 @@ export interface PrunePreview {
 
 /** What a cut at `cutoff` would remove, without removing it. */
 export function prunePreview(db: DB, cutoff: number): PrunePreview {
-  const total = (db.prepare('SELECT COUNT(*) AS n FROM items WHERE published_at < ?')
-    .get(cutoff) as { n: number }).n;
-  const keeping = (db.prepare('SELECT COUNT(*) AS n FROM items WHERE published_at >= ?')
-    .get(cutoff) as { n: number }).n;
+  const total = (db.prepare(`SELECT COUNT(*) AS n FROM items WHERE ${OLDER_THAN}`)
+    .get(cutoff, cutoff) as { n: number }).n;
+  const stated = (db.prepare(
+    `SELECT COUNT(*) AS n FROM items WHERE ${OLDER_THAN} AND items.date_estimated = 0`,
+  ).get(cutoff, cutoff) as { n: number }).n;
+  const keeping = (db.prepare(`SELECT COUNT(*) AS n FROM items WHERE NOT ${OLDER_THAN}`)
+    .get(cutoff, cutoff) as { n: number }).n;
   const byInstitution = db
     .prepare(
       `SELECT institution, COUNT(*) AS count FROM items
-        WHERE published_at < ? GROUP BY institution ORDER BY count DESC, institution ASC`,
+        WHERE ${OLDER_THAN} GROUP BY institution ORDER BY count DESC, institution ASC`,
     )
-    .all(cutoff) as { institution: string; count: number }[];
-  return { total, keeping, byInstitution, orphanTags: countOrphanTags(db) };
+    .all(cutoff, cutoff) as { institution: string; count: number }[];
+  return {
+    total,
+    stated,
+    estimated: total - stated,
+    keeping,
+    byInstitution,
+    orphanTags: countOrphanTags(db),
+  };
 }
 
 function countOrphanTags(db: DB): number {
@@ -319,17 +353,17 @@ export function pruneOlderThan(db: DB, cutoff: number): PruneResult {
   db.transaction(() => {
     tags = (db.prepare(
       `SELECT COUNT(*) AS n FROM item_tags
-        WHERE item_id IN (SELECT id FROM items WHERE published_at < ?)`,
-    ).get(cutoff) as { n: number }).n;
+        WHERE item_id IN (SELECT id FROM items WHERE ${OLDER_THAN})`,
+    ).get(cutoff, cutoff) as { n: number }).n;
 
     // Tombstones first: once the rows are gone their hashes are gone too.
     db.prepare(
       `INSERT OR IGNORE INTO pruned_urls (canonical_hash, pruned_at)
-       SELECT canonical_hash, ? FROM items WHERE published_at < ?`,
-    ).run(Date.now(), cutoff);
+       SELECT canonical_hash, ? FROM items WHERE ${OLDER_THAN}`,
+    ).run(Date.now(), cutoff, cutoff);
 
     // item_tags follows by ON DELETE CASCADE, which openDb enables.
-    deleted = db.prepare('DELETE FROM items WHERE published_at < ?').run(cutoff).changes;
+    deleted = db.prepare(`DELETE FROM items WHERE ${OLDER_THAN}`).run(cutoff, cutoff).changes;
     orphanTags = sweepOrphanTags(db);
   })();
 

@@ -574,6 +574,54 @@ describe('pruning', () => {
     expect(storedItems()).toHaveLength(ARTICLE_COUNT);
   });
 
+  it('judges a guessed date on time in the list, not on the guess', async () => {
+    use([rssSource(fixture.base)]);
+    await runOnce(true);
+
+    const db = openDb();
+    const twoYears = Date.now() - 2 * 365 * 86_400_000;
+    const rows = db.prepare('SELECT id FROM items ORDER BY id').all() as { id: number }[];
+    const guessed = rows[0]!.id;
+    const stated = rows[1]!.id;
+
+    // A sitemap lastmod two years old, on a page we first saw this morning.
+    // The lastmod is a rebuild timestamp: not a fact worth deleting on.
+    db.prepare('UPDATE items SET date_estimated = 1, published_at = ?, first_seen_at = ? WHERE id = ?')
+      .run(twoYears, Date.now(), guessed);
+    // The publisher's own date, two years old, and that is a fact.
+    db.prepare('UPDATE items SET date_estimated = 0, published_at = ?, first_seen_at = ? WHERE id = ?')
+      .run(twoYears, Date.now(), stated);
+
+    const cutoff = Date.now() - 365 * 86_400_000;
+    const preview = prunePreview(db, cutoff);
+    expect(preview.stated).toBe(1);
+    expect(preview.estimated).toBe(0);
+
+    pruneOlderThan(db, cutoff);
+    const left = db.prepare('SELECT id FROM items WHERE id IN (?, ?)').all(guessed, stated) as
+      { id: number }[];
+    db.close();
+    expect(left.map((r) => r.id)).toEqual([guessed]);
+  });
+
+  it('drops a guessed date once it has sat in the list past the cutoff', async () => {
+    use([rssSource(fixture.base)]);
+    await runOnce(true);
+
+    const db = openDb();
+    const old = Date.now() - 2 * 365 * 86_400_000;
+    const victim = (db.prepare('SELECT id FROM items LIMIT 1').get() as { id: number }).id;
+    db.prepare('UPDATE items SET date_estimated = 1, published_at = ?, first_seen_at = ? WHERE id = ?')
+      .run(old, old, victim);
+
+    const cutoff = Date.now() - 365 * 86_400_000;
+    expect(prunePreview(db, cutoff).estimated).toBe(1);
+    pruneOlderThan(db, cutoff);
+    const gone = db.prepare('SELECT id FROM items WHERE id = ?').get(victim);
+    db.close();
+    expect(gone).toBeUndefined();
+  });
+
   it('sweeps tag rows whose article was deleted without the cascade', async () => {
     use([rssSource(fixture.base)]);
     await runOnce(true);

@@ -264,8 +264,21 @@ publisher-dated articles a day**, weekday-heavy, and an article costs about
 a year** and would need a decade or two to become inconvenient. Size is not a
 reason to prune.
 
-Ageing the reading list is. `npm run prune` shows what a cut would remove and
-deletes nothing; `--apply` goes ahead, and `--older-than=180d` moves the line:
+Ageing the reading list is. The default cut is **365 days**, and what "older
+than" means is decided per article, because `published_at` carries two different
+kinds of fact:
+
+| The article's date | Judged on | Because |
+|---|---|---|
+| Stated by the publisher (`date_estimated = 0`) | `published_at` | It is a real publication date. |
+| Estimated (`date_estimated = 1`) | `first_seen_at` | The stored date is a sitemap `lastmod` — a CMS rebuild stamp — or just the moment of first sight. It goes a year after it reached your list, not a year after a timestamp nobody vouched for. |
+
+Roughly two in five stored articles carry an estimated date, so this is not an
+edge case. It errs towards keeping: an ancient page whose CMS restamped it
+yesterday survives, rather than a recent one being deleted on a bad guess.
+
+`npm run prune` shows what a cut would remove and deletes nothing; `--apply`
+goes ahead, and `--older-than=180d` moves the line:
 
 ```bash
 npm run prune                                # what a 365-day cut would take
