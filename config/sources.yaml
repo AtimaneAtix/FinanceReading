@@ -1,10 +1,11 @@
 # Source registry. This file is the heart of the project — adding an
 # institution is a block here, never a code change.
 #
-# Every URL below was fetched and parsed on 2026-09-11 with this project's own
-# user-agent, except where a comment says otherwise. That matters: several of
-# these hosts answer 406/403 to a *browser* user-agent and 200 to ours, so a
-# URL that looks dead in your browser may be perfectly alive to the worker.
+# Every URL below was fetched and parsed with this project's own user-agent --
+# on 2026-09-11, or on 2026-09-20 for the sources added that day -- except
+# where a comment says otherwise. That matters: several of these hosts answer
+# 406/403 to a *browser* user-agent and 200 to ours, so a URL that looks dead
+# in your browser may be perfectly alive to the worker.
 #
 #   npm run doctor                  # tests every source, prints what works
 #   npm run discover -- <page-url>  # hunts the real endpoint behind a JS page
@@ -299,6 +300,29 @@ sources:
       include: ['/ideas/', '/insights/']
       max_new_per_run: 5
 
+  # Disabled 2026-09-20. Morgan Stanley Investment Management sits on its own
+  # Akamai property and answers 403 to every plain request -- /im/sitemap.xml,
+  # /im/sitemap2.xml, /im/robots.txt and the insights page itself, to a browser
+  # user-agent as readily as to ours -- the same hard block as imf-blog, so
+  # there is no URL to fix. The parent sitemapindex.xml advertises both /im/
+  # children, which is how you find them and not how you read them.
+  #
+  # morganstanley-ideas above is not a substitute: the corporate sitemap it
+  # reads carries 832 /insights/ URLs and not one under /im/. Reviving this
+  # needs the browser adapter:
+  #   npm run discover -- https://www.morganstanley.com/im/en-gb/intermediary-investor/insights.html
+  - id: msim-insights
+    enabled: false
+    institution: Morgan Stanley Investment Management
+    name: Insights
+    homepage: https://www.morganstanley.com
+    static_tags: [type:insight]
+    adapter:
+      kind: sitemap
+      url: https://www.morganstanley.com/im/sitemap.xml
+      include: ['/insights/']
+      max_new_per_run: 5
+
   - id: schroders-insights
     institution: Schroders
     name: Insights
@@ -328,6 +352,39 @@ sources:
         - '/thought-leadership/public-policy/'
       max_new_per_run: 5
 
+  - id: blackrock-us-individual
+    institution: BlackRock
+    name: US individual insights
+    homepage: https://www.blackrock.com
+    static_tags: [type:insight]
+    adapter:
+      kind: sitemap
+      # A separate property from the corporate tree above, with its own entry
+      # in robots.txt. 122 URLs under /insights/, of which 84 are flat
+      # `/insights/<slug>` market commentary -- "Macro implications of
+      # chipflation", "Stock opportunities as rates fall" -- that the corporate
+      # sitemap does not carry at all.
+      #
+      # Know this before judging its dates: these pages publish no OpenGraph or
+      # JSON-LD date whatsoever, and every URL in the file shares one lastmod
+      # restamped on each CMS rebuild. So everything from here arrives
+      # date-estimated and in no meaningful order among itself. That is not new
+      # -- the corporate pages blackrock-bii reads are undated the same way --
+      # but one shared lastmod removes even the ordering, so
+      # max_undated_per_run keeps it to a trickle rather than a daily handful.
+      url: https://www.blackrock.com/us/individual/sitemap.xml
+      include: ['/us/individual/insights/']
+      exclude:
+        - '/insights/video/'
+        # Already covered: blackrock-bii reads the Investment Institute, and
+        # the retirement pages are education rather than market writing.
+        - '/insights/blackrock-investment-institute'
+        - '/insights/retirement(/|$)'
+        # Two section hubs that sit at article depth.
+        - '/insights/(active-investor-series|thematic-investing)$'
+      max_new_per_run: 5
+      max_undated_per_run: 2
+
   - id: jpmam-insights
     institution: J.P. Morgan Asset Management
     name: Insights
@@ -343,6 +400,42 @@ sources:
       include: ['/insights/']
       max_new_per_run: 5
 
+  - id: jpmorgan-insights
+    institution: J.P. Morgan
+    name: Markets and Global Research
+    homepage: https://www.jpmorgan.com
+    static_tags: [type:insight]
+    adapter:
+      kind: sitemap
+      # The bank's own insights, which is a different publication from
+      # jpmam-insights above -- that one is am.jpmorgan.com, the asset manager.
+      # Same shape of problem and the same answer: www.jpmorgan.com/sitemap.xml
+      # is an index of ~90 region+language children carrying no lastmod, so the
+      # US one is named directly rather than left to the adapter to guess.
+      #
+      # /insights/ holds some 1400 URLs across 22 topics, most of them treasury,
+      # payments and commercial banking. The two included here are the market
+      # ones. markets-and-economy is also where the Wealth Partners insights
+      # hub sends its Top Market Takeaways -- that hub is a JavaScript page
+      # with three URLs of its own in the sitemap, so this is the way in.
+      #
+      # The two-segment include is deliberate: each topic publishes a dozen or
+      # so section hubs one segment down (.../global-research/commodities),
+      # which no exclusion list stays ahead of. It costs the two articles that
+      # are published at hub depth by mistake.
+      #
+      # Most of these pages carry `<meta name="publishDate">`, which the
+      # generic date matcher picks up, so the dates are usually the
+      # publisher's own -- four of the first five fetched were. The ones that
+      # do not state a date offer only an `alg-search-date` epoch, which is not
+      # read, and fall back to the sitemap's lastmod. Those lastmods are at
+      # least genuinely per-URL and current, so max_undated_per_run is a brake
+      # rather than the main event.
+      url: https://www.jpmorgan.com/US/en/sitemap.xml
+      include: ['/insights/(markets-and-economy|global-research)/[^/]+/[^/]+$']
+      max_new_per_run: 5
+      max_undated_per_run: 2
+
   - id: morningstar-markets
     institution: Morningstar
     name: Markets
@@ -354,7 +447,15 @@ sources:
       # -- 5000 URLs, no articles. Editorial lives in the Arc outbound feed,
       # whose children are dated newest-first.
       url: https://media.morningstar.com/arc/outboundfeeds/sitemap/morningstar-all/
-      include: ['/markets/', '/economy/', '/funds/', '/personal-finance/']
+      # /financial-advisors/ is the advisor-facing writing behind
+      # morningstar.com/financial-advisors -- roughly one piece every other
+      # day, and it was simply missing from this list rather than rejected.
+      include:
+        - '/markets/'
+        - '/economy/'
+        - '/funds/'
+        - '/personal-finance/'
+        - '/financial-advisors/'
       max_new_per_run: 5
 
   # Flaky, not broken. /sitemap.xml is an index with exactly one child,
@@ -419,6 +520,50 @@ sources:
       url: https://www.ishares.com/us/sitemap.xml
       include: ['/insights/']
       exclude: ['/investor-education/']
+      max_new_per_run: 5
+
+  - id: pictet-insights
+    institution: Pictet
+    name: Market insights
+    homepage: https://pnaa.pictet.com
+    static_tags: [type:insight]
+    adapter:
+      kind: sitemap
+      # Pictet North America Advisors, advertised in robots.txt. 229 of this
+      # file's 251 URLs are insights: a weekly house view published as
+      # `Weekly-views-YYYYMMDD`, plus 24 longer `stories/` pieces. Every
+      # article carries JSON-LD datePublished, so nothing here arrives
+      # estimated -- one of the better-behaved sources in this section.
+      url: https://pnaa.pictet.com/sitemap.xml
+      include: ['/insights/']
+      exclude:
+        # The two index pages under the section root. The root itself has no
+        # trailing slash, so the include pattern already passes it by.
+        - '/insights/(stories|full-list-of-market-insights)$'
+      max_new_per_run: 5
+
+  - id: alliancebernstein-insights
+    institution: AllianceBernstein
+    name: Insights
+    homepage: https://www.alliancebernstein.com
+    static_tags: [type:insight]
+    adapter:
+      kind: sitemap
+      # The root sitemap.xml is an index of 65 per-region children whose
+      # lastmods all read 2023-06-29, so the adapter cannot tell which is
+      # freshest -- naming the US child directly is what keeps this English and
+      # current. Inside it are 1876 `/investments/insights/` URLs across eleven
+      # subsections, dated per URL, and each article states its own
+      # article:published_time.
+      url: https://www.alliancebernstein.com/us/en-us/investments.sitemap.xml
+      include: ['/investments/insights/']
+      exclude:
+        # The eleven subsection landing pages, which sit one segment under
+        # /insights/ where the articles sit two.
+        - '/insights/[^/]+\.html$'
+        # Advisor business content -- client conversations, practice growth --
+        # rather than market writing.
+        - '/insights/practice-management/'
       max_new_per_run: 5
 
   - id: ssga-insights
@@ -561,3 +706,38 @@ sources:
     adapter:
       kind: rss
       url: https://klementoninvesting.substack.com/feed
+
+  - id: damodaran-musings
+    institution: Aswath Damodaran
+    name: Musings on Markets
+    homepage: https://aswathdamodaran.blogspot.com
+    static_tags: [type:commentary]
+    adapter:
+      # Blogger serves Atom at this stem; the rss adapter sniffs the body, so
+      # it parses like any other feed.
+      kind: rss
+      url: https://aswathdamodaran.blogspot.com/feeds/posts/default
+
+  # ===========================================================================
+  # 8. CONSULTANCIES
+  # ===========================================================================
+
+  - id: mckinsey-insights
+    institution: McKinsey
+    name: Insights and publications
+    homepage: https://www.mckinsey.com
+    static_tags: [type:research]
+    adapter:
+      # mckinsey.com is hostile to plain crawling in an unusual way: robots.txt,
+      # sitemap.xml and every /capabilities/... listing page accept the
+      # connection and then reset it, under any user-agent and over HTTP/1.1 as
+      # well as HTTP/2 -- so they do not 403, they simply never answer. This
+      # feed does, with 50 items and real pubDates. A robots.txt we cannot
+      # fetch is treated as permissive, which is what makes it reachable.
+      #
+      # It is the firm-wide stream. There is no per-capability feed -- every
+      # shape under /capabilities/strategy-and-corporate-finance/our-insights
+      # returns 404 -- so the taxonomy is what separates the strategy and
+      # corporate-finance writing from the healthcare and marketing pieces.
+      kind: rss
+      url: https://www.mckinsey.com/insights/rss

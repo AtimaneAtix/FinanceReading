@@ -1,4 +1,4 @@
-import { ProxyAgent, type Dispatcher } from 'undici';
+import { Agent, ProxyAgent, type Dispatcher } from 'undici';
 
 export const USER_AGENT =
   process.env.USER_AGENT ??
@@ -6,18 +6,35 @@ export const USER_AGENT =
 
 const DEFAULT_TIMEOUT_MS = 20_000;
 
-let dispatcher: Dispatcher | null | undefined;
+/**
+ * Node's ceiling on a response's headers is 16 KB, and a publisher can spend
+ * all of it on one header: AllianceBernstein sends a 16,193-byte
+ * Content-Security-Policy, which overruns the limit before the sitemap's first
+ * byte arrives and surfaces as "Headers Overflow Error" -- a failure on our
+ * side that reads exactly like the host refusing us. 64 KB is generous enough
+ * that a header budget stops being something a source has to be checked for.
+ */
+const MAX_HEADER_SIZE = 64 * 1024;
+
+let proxy: Dispatcher | null | undefined;
+let direct: Dispatcher | undefined;
+
 /**
  * Node's fetch ignores HTTPS_PROXY unless told otherwise. Honouring it matters
  * for running inside a corporate or sandboxed network.
+ *
+ * Both paths are built here rather than only the proxy one, because the header
+ * ceiling above is a property of the dispatcher: leaving the direct case to
+ * undici's global default would apply it to proxied requests alone.
  */
-function proxyDispatcher(url: string): Dispatcher | undefined {
-  if (dispatcher === undefined) {
-    const proxy = process.env.HTTPS_PROXY ?? process.env.https_proxy;
-    dispatcher = proxy ? new ProxyAgent(proxy) : null;
+function dispatcherFor(url: string): Dispatcher {
+  if (proxy === undefined) {
+    const uri = process.env.HTTPS_PROXY ?? process.env.https_proxy;
+    proxy = uri ? new ProxyAgent({ uri, maxHeaderSize: MAX_HEADER_SIZE }) : null;
   }
-  if (dispatcher === null) return undefined;
-  return shouldProxy(url) ? dispatcher : undefined;
+  if (proxy !== null && shouldProxy(url)) return proxy;
+  direct ??= new Agent({ maxHeaderSize: MAX_HEADER_SIZE });
+  return direct;
 }
 
 /**
@@ -124,8 +141,7 @@ export async function httpFetch(url: string, opts: HttpOptions = {}): Promise<Ht
     redirect: 'follow',
   };
   if (opts.body !== undefined) init.body = opts.body;
-  const d = proxyDispatcher(url);
-  if (d) init.dispatcher = d;
+  init.dispatcher = dispatcherFor(url);
 
   let res: Response;
   try {
