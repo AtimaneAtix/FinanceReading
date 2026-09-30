@@ -55,6 +55,37 @@ keeps working when the site is redesigned.
 
 ---
 
+## Download and install
+
+You need **Node.js 22 or newer** and **git**. Docker is optional (it is the
+easiest way to leave it running in the background).
+
+```bash
+git clone https://github.com/AtimaneAtix/FinanceReading.git
+cd FinanceReading
+npm install
+```
+
+Then either:
+
+```bash
+npm run ingest:once && npm start     # fetch every source once, then serve
+```
+
+and open <http://localhost:3000>, or, with Docker instead of Node:
+
+```bash
+docker compose up -d --build
+```
+
+Update later with `git pull && npm install`. The plain-language guide to
+running it day to day is [docs/USER_MANUAL.md](docs/USER_MANUAL.md).
+
+> `npm install` compiles `better-sqlite3` if no prebuilt binary matches your
+> platform, which needs a C++ toolchain (Xcode command-line tools on macOS,
+> `build-essential` on Debian/Ubuntu). Playwright is optional and only needed
+> for the `browser` adapter and `npm run discover`.
+
 ## Getting started
 
 ### 1. Look at it before configuring anything
