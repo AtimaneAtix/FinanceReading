@@ -10,6 +10,8 @@ docker compose up -d --build
 open http://localhost:3000
 ```
 
+![The FinanceReading panel](docs/screenshot.png)
+
 - **Tags and filters.** Every article is tagged by type, scope (macro/micro),
   asset class, region and theme. The sidebar filters on them: OR within a
   group, AND across groups. Filters live in the URL, so any view is
