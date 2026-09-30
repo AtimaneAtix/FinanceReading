@@ -454,3 +454,17 @@ unchanged feed costs nothing.
 - Full article text, AI summaries, PDF outlooks, read/unread state and saved
   articles are not in this version. The schema takes them without a rewrite.
 - Sites behind a login or a hard paywall are out of scope.
+
+---
+
+## License and credit
+
+MIT — see [LICENSE](LICENSE). Use it, change it, share it; keep the copyright
+notice.
+
+Made by Atilla Serdar Ulaş, built with [Claude](https://claude.com/claude-code).
+
+FinanceReading only links to and briefly indexes what publishers put out
+publicly; it is not affiliated with or endorsed by any institution in
+`config/sources.yaml`. If you run it, you are responsible for respecting each
+site's terms.
